@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, Boolean
-from config.base import Base
+from backend.config.base import Base
 from sqlalchemy.orm import relationship
 
 class Participante(Base):
@@ -9,6 +9,6 @@ class Participante(Base):
     nome = Column(String)
     email = Column(String, unique = True)
     cpf = Column(String, unique = True)
-    presente = Column(Boolean, defalut = False)
+    presente = Column(Boolean, default = False)
 
     respostas = relationship("Resposta", back_populates="participante", cascade="all, delete-orphan")

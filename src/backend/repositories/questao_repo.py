@@ -1,5 +1,5 @@
-from entities.questao import Questao
-from config.connection import DBConnectionHandler
+from backend.entities.questao import Questao
+from backend.config.connection import DBConnectionHandler
 
 class QuestaoRepo:
 

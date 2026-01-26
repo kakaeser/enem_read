@@ -1,5 +1,5 @@
-from entities.participante import Participante
-from config.connection import DBConnectionHandler
+from backend.entities.participante import Participante
+from backend.config.connection import DBConnectionHandler
 
 
 class ParticipanteRepo:

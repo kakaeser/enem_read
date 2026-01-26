@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer
-from config.base import Base
+from backend.config.base import Base
 from sqlalchemy.orm import relationship
 
 class Questao(Base):

@@ -1,6 +1,6 @@
-from sqlalchemy import Column, Integer, Boolean
-from config.base import Base
-from sqlalchemy.orm import relationship, ForeignKey
+from sqlalchemy import Column, Integer, Boolean, ForeignKey
+from backend.config.base import Base
+from sqlalchemy.orm import relationship
 
 class Resposta(Base):
     __tablename__ = "resultados"
