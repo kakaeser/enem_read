@@ -8,14 +8,9 @@ venv/
 *.sqlite3
 
 
-/mobile/build/
-/mobile/.dart_tool/
-/mobile/.flutter-plugins
-/mobile/.flutter-plugins-dependencies
-/mobile/.pub-cache/
-/mobile/.pub/
 testes.py
 
 .idea/
 .vscode/
 *.swp
+src/backend/seed/

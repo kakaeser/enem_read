@@ -11,13 +11,19 @@ class Lista(CTkScrollableFrame):
 
     def renderizar(self):
         participantes = self.service.listar_nomes()
-
-        for p in participantes:
-            self.criar_linha(p)
+        if not participantes:
+            CTkLabel(
+                self.lista,
+                text="Nenhum participante cadastrado"
+            ).pack(pady=20)
+            return
+        else:
+            for p in participantes:
+                self.criar_linha(p)
     
     def criar_linha(self, participante):
-        linha = CTkFrame()
-        linha.pack(fill="x", padx=8, pady=4)
+        linha = CTkFrame(master = self)
+        linha.pack(fill="x", padx=2, pady=2)
 
         var = IntVar(value= int(participante["presente"]))
         checkbox = CTkCheckBox(
@@ -32,6 +38,7 @@ class Lista(CTkScrollableFrame):
             linha,
             text=participante["nome"],
             fg_color="transparent",
+            hover_color=("#EDF0F0", "#353535"),
             anchor="w",
             command=lambda:
                 self.on_select_participante(
@@ -39,4 +46,4 @@ class Lista(CTkScrollableFrame):
                     participante["nome"]
                 )
         )
-        botao_nome.pack(side="left", fill="x", expand=True, padx=5)
+        botao_nome.pack(side="left", fill="x", expand=True, padx=2)

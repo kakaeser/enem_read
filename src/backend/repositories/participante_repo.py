@@ -6,18 +6,63 @@ class ParticipanteRepo:
 
     def listar_ordem_alfabetica(self):
         with DBConnectionHandler() as db:
-            data = db.session.query(Participante).order_by(Participante.nome).all()
-        return data
-    
+            participantes = db.session.query(Participante).order_by(Participante.nome).all()
+            # transforma cada objeto em dict dentro da sessão
+            return [
+                {
+                    "id": p.id,
+                    "nome": p.nome,
+                    "email": p.email,
+                    "cpf": p.cpf,
+                    "presente": p.presente
+                }
+                for p in participantes
+            ] or []
     def listar_presentes(self):
         with DBConnectionHandler() as db:
-            data = db.session.query(Participante).filter(Participante.presente == True).all()
-        return data
+            participantes = (
+                db.session
+                .query(Participante)
+                .filter(Participante.presente == True)
+                .all()
+            )
+
+            return [
+                {
+                    "id": p.id,
+                    "nome": p.nome,
+                    "presente": p.presente
+                }
+                for p in participantes
+            ]
     
     def buscar_por_id(self, id:int):
         with DBConnectionHandler() as db:
             data = db.session.query(Participante).filter(Participante.id == id).first()
-        return data
+            return [
+                {
+                    "id": p.id,
+                    "nome": p.nome,
+                    "email": p.email,
+                    "cpf": p.cpf,
+                    "presente": p.presente
+                }
+                for p in data
+            ] or []
+    
+    def buscar_por_nome(self, nome: str):
+        with DBConnectionHandler() as db:
+            data = db.session.query(Participante).filter(Participante.nome == nome).first()
+            return [
+                {
+                    "id": p.id,
+                    "nome": p.nome,
+                    "email": p.email,
+                    "cpf": p.cpf,
+                    "presente": p.presente
+                }
+                for p in data
+            ] or []
     
     def marcar_presenca(self, user_id:int,mark:int):
         presente : bool

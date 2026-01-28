@@ -24,6 +24,7 @@ class DBConnectionHandler:
     def get_engine(self):
         return DBConnectionHandler._engine
 
+
     def __enter__(self):
         Session = sessionmaker(bind=self.get_engine())
         self.session = Session()
