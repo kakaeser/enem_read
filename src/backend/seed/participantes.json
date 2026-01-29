@@ -1,0 +1,23 @@
+[
+  { "nome": "Ana Clara Souza", "email": "ana.souza@email.com", "cpf": "11111111101", "presente": false },
+  { "nome": "Bruno Henrique Lima", "email": "bruno.lima@email.com", "cpf": "11111111102", "presente": false },
+  { "nome": "Carla Mendes Rocha", "email": "carla.rocha@email.com", "cpf": "11111111103", "presente": false },
+  { "nome": "Daniel Ferreira Alves", "email": "daniel.alves@email.com", "cpf": "11111111104", "presente": false },
+  { "nome": "Eduarda Pires Costa", "email": "eduarda.costa@email.com", "cpf": "11111111105", "presente": false },
+  { "nome": "Felipe Martins Silva", "email": "felipe.silva@email.com", "cpf": "11111111106", "presente": false },
+  { "nome": "Gabriela Nunes Torres", "email": "gabriela.torres@email.com", "cpf": "11111111107", "presente": false },
+  { "nome": "Henrique Batista Moreira", "email": "henrique.moreira@email.com", "cpf": "11111111108", "presente": false },
+  { "nome": "Isabela Rangel Farias", "email": "isabela.farias@email.com", "cpf": "11111111109", "presente": false },
+  { "nome": "João Victor Ribeiro", "email": "joao.ribeiro@email.com", "cpf": "11111111110", "presente": false },
+
+  { "nome": "Karina Lopes Azevedo", "email": "karina.azevedo@email.com", "cpf": "11111111111", "presente": false },
+  { "nome": "Lucas Andrade Cunha", "email": "lucas.cunha@email.com", "cpf": "11111111112", "presente": false },
+  { "nome": "Mariana Teixeira Pacheco", "email": "mariana.pacheco@email.com", "cpf": "11111111113", "presente": false },
+  { "nome": "Nicolas Freitas Braga", "email": "nicolas.braga@email.com", "cpf": "11111111114", "presente": false },
+  { "nome": "Olivia Barros Guedes", "email": "olivia.guedes@email.com", "cpf": "11111111115", "presente": false },
+  { "nome": "Pedro Henrique Moura", "email": "pedro.moura@email.com", "cpf": "11111111116", "presente": false },
+  { "nome": "Renata Cavalcante Dias", "email": "renata.dias@email.com", "cpf": "11111111117", "presente": false },
+  { "nome": "Samuel Afonso Leite", "email": "samuel.leite@email.com", "cpf": "11111111118", "presente": false },
+  { "nome": "Tatiane Figueiredo Melo", "email": "tatiane.melo@email.com", "cpf": "11111111119", "presente": false },
+  { "nome": "Victor Hugo Macedo", "email": "victor.macedo@email.com", "cpf": "11111111120", "presente": false }
+]

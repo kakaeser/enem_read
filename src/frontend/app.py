@@ -4,6 +4,7 @@ from frontend.configuracoes import Configuracoes
 from frontend.gabarito import Gabarito
 from backend.services.presence_service import PresenceService
 from backend.services.question_service import QuestionService
+from backend.services.ranking_service import RankingService
 
 set_appearance_mode("Dark")
 
@@ -15,6 +16,7 @@ class App(CTk):
         self.aluno_selecionado = None
         self.presence_service = PresenceService()
         self.question_service = QuestionService()
+        self.ranking_service = RankingService()
 
         #Inicilização da barra horizontal
         self.barrahori = CTkFrame(master = self, fg_color=("#DDE7E7", "#1B1B1B"), corner_radius=0)
@@ -82,7 +84,7 @@ class App(CTk):
         if hasattr(self, "toplevel") and self.toplevel.winfo_exists():
             self.toplevel.focus()
             return
-        self.toplevel = Configuracoes(master= self, presence_service = self.presence_service, question_service= self.question_service)
+        self.toplevel = Configuracoes(master= self, presence_service = self.presence_service, question_service= self.question_service, ranking_service= self.ranking_service, on_update= self.atualizar_telas)
         self.toplevel.title("Configurações")
         self.toplevel.geometry("500x700")
         self.toplevel.lift()
@@ -91,4 +93,8 @@ class App(CTk):
 
     def marcacao(self, mark):
         self.question_service.marcar_todos(self.aluno_selecionado["id"], mark)
+        self.gabarito.renderizar()
+    
+    def atualizar_telas(self):
+        self.lista.renderizar()
         self.gabarito.renderizar()

@@ -13,7 +13,7 @@ class Lista(CTkScrollableFrame):
         participantes = self.service.listar_nomes()
         if not participantes:
             CTkLabel(
-                self.lista,
+                self,
                 text="Nenhum participante cadastrado"
             ).pack(pady=20)
             return

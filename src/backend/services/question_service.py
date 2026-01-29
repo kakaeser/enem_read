@@ -1,4 +1,3 @@
-from backend.repositories.participante_repo import ParticipanteRepo
 from backend.repositories.questao_repo import QuestaoRepo
 from backend.repositories.resposta_repo import RespostaRepo
 from backend.entities.questao import Questao
@@ -52,3 +51,7 @@ class QuestionService:
         data = self.q_repo.listar_ordem_numerica()
         for i in data:
             self.r_repo.mudar_acerto(p_id, i["id"],mark)
+
+    def calcular_nota_maxima(self):
+        questoes = self.q_repo.listar_ordem_numerica()
+        return sum(q["peso"] for q in questoes)
