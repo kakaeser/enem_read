@@ -1,7 +1,8 @@
 from customtkinter import *
 from frontend.lista import Lista
+from frontend.configuracoes import Configuracoes
 from backend.services.presence_service import PresenceService
-from backend.repositories.participante_repo import ParticipanteRepo
+from backend.services.question_service import QuestionService
 
 set_appearance_mode("Dark")
 
@@ -12,9 +13,13 @@ class App(CTk):
         self.title("Enem da Read")
         self.aluno_selecionado = None
         self.presence_service = PresenceService()
+        self.question_service = QuestionService()
 
         self.barrahori = CTkFrame(master = self, fg_color=("#DDE7E7", "#1B1B1B"), corner_radius=0)
-        self.barrahori.place(relx = 0.5, rely = 0, relwidth = 1, relheight = 0.05, anchor = "center")
+        self.barrahori.place(relx = 0.5, rely = 0.02, relwidth = 1, relheight = 0.04, anchor = "center")
+
+        self.configuracao = CTkButton(master = self.barrahori, fg_color= "transparent", hover_color= ("#C7C7C7", "#2E2E2E"), text = "Configurações", corner_radius= 0, command = self.abrir_configs)
+        self.configuracao.pack(side="left")
 
         self.lista = Lista(master = self, fg_color=("#DDE7E7", "#1B1B1B"), corner_radius=0, presence_service= self.presence_service, on_select_participante= self.selecionar_aluno)
         self.lista.place(relx = 0.19, rely = 0.55, relwidth = 0.3, relheight = 0.7, anchor = "center")
@@ -54,3 +59,14 @@ class App(CTk):
             self.nome_questoes.configure(
                 text=f"Questões do aluno: {nome}"
             )
+    
+    def abrir_configs(self):
+        if hasattr(self, "toplevel") and self.toplevel.winfo_exists():
+            self.toplevel.focus()
+            return
+        self.toplevel = Configuracoes(master= self, presence_service = self.presence_service, question_service= self.question_service)
+        self.toplevel.title("Configurações")
+        self.toplevel.geometry("500x700")
+        self.toplevel.lift()
+        self.toplevel.attributes("-topmost", True)
+        self.toplevel.after(100, lambda: self.toplevel.attributes("-topmost", False))

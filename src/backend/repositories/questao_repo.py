@@ -29,3 +29,8 @@ class QuestaoRepo:
         with DBConnectionHandler() as db:
             db.session.add_all(questoes)
         return True
+    
+    def delete_questoes(self):
+        with DBConnectionHandler() as db:
+            db.session.query(Questao).delete()
+        return True

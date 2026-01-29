@@ -30,15 +30,20 @@ class Lista(CTkScrollableFrame):
             linha,
             text="",
             variable=var,
+            width = 20,
+            fg_color="#31B3FF",
+            hover_color="#31B3FF",
+            corner_radius= 0,
             command=lambda pid=participante["id"], v=var:
                 self.service.marcar_presenca(pid, v.get())
         )
-        checkbox.pack(side="left")
+        
         botao_nome = CTkButton(
             linha,
             text=participante["nome"],
             fg_color="transparent",
             hover_color=("#EDF0F0", "#353535"),
+            corner_radius= 0 ,
             anchor="w",
             command=lambda:
                 self.on_select_participante(
@@ -46,4 +51,5 @@ class Lista(CTkScrollableFrame):
                     participante["nome"]
                 )
         )
-        botao_nome.pack(side="left", fill="x", expand=True, padx=2)
+        botao_nome.pack(side="left", fill="x", expand=True, padx=(8, 4))
+        checkbox.pack(side="right", padx=(4, 8))
