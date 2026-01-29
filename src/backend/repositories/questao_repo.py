@@ -11,7 +11,15 @@ class QuestaoRepo:
     def listar_ordem_numerica(self):
         with DBConnectionHandler() as db:
             data = db.session.query(Questao).order_by(Questao.numero).all()
-            return data or []
+            return [
+                {
+                    "id": p.id,
+                    "numero": p.numero,
+                    "peso": p.peso,
+                    "acerto": 0
+                }
+                for p in data
+            ] or []
     
     def alterar_peso(self, questao_id: int, peso: int):
         if peso <= 0:
