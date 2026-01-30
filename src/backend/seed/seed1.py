@@ -15,9 +15,7 @@ def seed_participantes_json():
 
     participantes = [
         Participante(
-            nome=p["nome"],
-            email=p["email"],
-            cpf=p["cpf"]
+            nome=p["nome"]
         )
         for p in dados
     ]
@@ -25,11 +23,6 @@ def seed_participantes_json():
     with DBConnectionHandler() as db:
         db.session.add_all(participantes)
 
-    print("✅ Participantes inseridos a partir do JSON com sucesso!")
-
-
-if __name__ == "__main__":
-    seed_participantes_json()
 
 
 #Código para rodar

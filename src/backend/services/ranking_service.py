@@ -37,6 +37,15 @@ class RankingService:
         ranking = []
         participantes = self.p_repo.listar_presentes()
         config = self.c_repo.get_notas()
+
+        if config is None:
+            for p in participantes:
+                ranking.append({
+                    "nome": p["nome"],
+                    "nota": "-"
+                })
+            return ranking
+        
         nota_max = config["nota_max"]
         nota_simb = config["nota_simb"]
 

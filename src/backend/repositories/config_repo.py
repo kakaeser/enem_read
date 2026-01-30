@@ -30,5 +30,7 @@ class ConfigRepo:
     def get_notas(self):
         with DBConnectionHandler() as db:
             data = db.session.query(Config).filter(Config.id == 1).first()
+            if not data:
+                return None
             
-            return {"nota_max": data.nota_max, "nota_simb": data.nota_simb} or []
+            return {"nota_max": data.nota_max, "nota_simb": data.nota_simb} 

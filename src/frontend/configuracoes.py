@@ -1,4 +1,5 @@
 from customtkinter import *
+from tkinter import filedialog
 from backend.seed.seed1 import seed_participantes_json
 
 class Configuracoes(CTkToplevel):
@@ -37,7 +38,7 @@ class Configuracoes(CTkToplevel):
         self.import_fake = CTkButton(master = self.frame, corner_radius= 0, text = "Importar Dados Fake", hover_color= "#1B1B1B", fg_color= "#3a3a3a", command = lambda: self.import_dados_fake())
         self.import_fake.pack(pady = 8, padx= 16, anchor ="w", side = "left")
 
-        self.import_real = CTkButton(master = self.frame, corner_radius= 0, text = "Importar Dados", hover_color= "#1B1B1B", fg_color= "#3a3a3a")
+        self.import_real = CTkButton(master = self.frame, corner_radius= 0, text = "Importar Dados", hover_color= "#1B1B1B", fg_color= "#3a3a3a", command = lambda: self.importar_dados())
         self.import_real.pack(pady = 8, padx= 16, anchor ="w", side = "left")
 
     def confirmar_questoes(self, n_questoes, pesos, nota_simb):
@@ -74,5 +75,20 @@ class Configuracoes(CTkToplevel):
         self.erro_label.configure(text="Questões Adicionadas com sucesso",text_color="#C4C4C4")
 
     def import_dados_fake(self):
+        self.p_service.delete_participantes()
         seed_participantes_json()
+        self.on_update()
+
+    def importar_dados(self):
+        caminho = filedialog.askopenfilename(
+            title="Selecionar arquivo Excel",
+            filetypes=[("Excel", "*.xlsx *.xls")],
+            parent=self
+        )
+
+        if not caminho:
+            print("Problema no caminho")
+            return  
+
+        self.p_service.importar_excel(caminho)
         self.on_update()

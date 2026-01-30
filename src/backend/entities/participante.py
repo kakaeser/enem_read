@@ -7,8 +7,6 @@ class Participante(Base):
 
     id = Column(Integer, primary_key= True)
     nome = Column(String)
-    email = Column(String, unique = True)
-    cpf = Column(String, unique = True)
     presente = Column(Boolean, default = False)
 
     respostas = relationship("Resposta", back_populates="participante", cascade="all, delete-orphan")

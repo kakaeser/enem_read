@@ -5,7 +5,7 @@ class Rank(CTkScrollableFrame):
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
         self.service = RankingService()
-        self.ranking = self.service.gerar_ranking()
+        self.ranking = []
 
         self.renderizar()
 

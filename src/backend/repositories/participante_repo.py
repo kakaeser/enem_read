@@ -7,13 +7,11 @@ class ParticipanteRepo:
     def listar_ordem_alfabetica(self):
         with DBConnectionHandler() as db:
             participantes = db.session.query(Participante).order_by(Participante.nome).all()
-            # transforma cada objeto em dict dentro da sessão
+            
             return [
                 {
                     "id": p.id,
                     "nome": p.nome,
-                    "email": p.email,
-                    "cpf": p.cpf,
                     "presente": p.presente
                 }
                 for p in participantes
@@ -42,8 +40,6 @@ class ParticipanteRepo:
                 {
                     "id": p.id,
                     "nome": p.nome,
-                    "email": p.email,
-                    "cpf": p.cpf,
                     "presente": p.presente
                 }
                 for p in data
@@ -56,8 +52,6 @@ class ParticipanteRepo:
                 {
                     "id": p.id,
                     "nome": p.nome,
-                    "email": p.email,
-                    "cpf": p.cpf,
                     "presente": p.presente
                 }
                 for p in data
@@ -78,3 +72,16 @@ class ParticipanteRepo:
             
             participante.presente = presente
             return True
+        
+    def delete_participantes(self):
+        with DBConnectionHandler() as db:
+            db.session.query(Participante).delete()
+        return True
+    
+    def criar_participantes(self, nomes):
+        with DBConnectionHandler() as db:
+            participantes = [
+                Participante(nome=nome)
+                for nome in nomes
+            ]
+            db.session.add_all(participantes)

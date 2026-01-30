@@ -75,6 +75,17 @@ class App(CTk):
         self.barra_rank = CTkFrame(master = self, corner_radius=0)
         self.barra_rank.place(relx = 0.81, rely = 0.885, relwidth = 0.3, relheight = 0.03, anchor = "center")
 
+        self.copiar_rank = CTkButton(master = self.barra_rank, width = 192, fg_color="#1F1F1F", hover_color="#313131", corner_radius=0, text = "Copiar Rank", command = lambda: self.copiar())
+        self.copiar_rank.pack(side = "left", fill = "both")
+
+        self.export_rank = CTkButton(master = self.barra_rank, width = 192, fg_color="#1F1F1F", hover_color="#313131", corner_radius=0, text = "Exportar Rank", command = lambda: self.exportar())
+        self.export_rank.pack(side = "left", fill = "both")
+
+        self.label_rank = CTkLabel(master= self, text= "")
+        self.label_rank.place(relx= 0.81, rely= 0.93, anchor= "center")
+
+        self.credits = CTkLabel(master= self, text= "Made by kakaeser")
+        self.credits.place(relx= 0.09, rely= 0.95, anchor= "center")
         
     def selecionar_aluno(self, id, nome):
         presentes = self.presence_service.listar_presentes()
@@ -109,4 +120,20 @@ class App(CTk):
         self.rank.renderizar()
     
     def copiar(self):
-        copia = self.ranking_service.gerar_ranking()
+        texto = ""
+        
+        for i, r in enumerate(self.rank.ranking, start=1):
+            if r["nota"] == "-":
+                nota = 0
+            else:
+                nota = float(r["nota"])
+            texto += f"{i}º - {r['nome']} - {nota:.2f}\n"
+
+
+        self.clipboard_clear()
+        self.clipboard_append(texto)
+        self.update()
+        self.label_rank.configure(text = "Rank copiado!!!")
+
+    def exportar(self):
+        self.label_rank.configure(text = "Rank exportado!!!")
