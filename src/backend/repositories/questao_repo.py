@@ -8,6 +8,11 @@ class QuestaoRepo:
             data = db.session.query(Questao).filter(Questao.numero == numero).first()
             return data or []
 
+    def buscar_por_id(self, id : int):
+        with DBConnectionHandler() as db:
+            data = db.session.query(Questao).filter(Questao.id == id).first()
+            return {"numero": data.numero, "peso": data.peso} or []
+
     def listar_ordem_numerica(self):
         with DBConnectionHandler() as db:
             data = db.session.query(Questao).order_by(Questao.numero).all()

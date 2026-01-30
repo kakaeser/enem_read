@@ -10,6 +10,9 @@ class Lista(CTkScrollableFrame):
         self.renderizar()
 
     def renderizar(self):
+        for widget in self.winfo_children():
+            widget.destroy()
+            
         participantes = self.service.listar_nomes()
         if not participantes:
             CTkLabel(

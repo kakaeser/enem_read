@@ -30,8 +30,7 @@ class ParticipanteRepo:
             return [
                 {
                     "id": p.id,
-                    "nome": p.nome,
-                    "presente": p.presente
+                    "nome": p.nome
                 }
                 for p in participantes
             ]

@@ -2,6 +2,7 @@ from customtkinter import *
 from frontend.lista import Lista
 from frontend.configuracoes import Configuracoes
 from frontend.gabarito import Gabarito
+from frontend.rank import Rank
 from backend.services.presence_service import PresenceService
 from backend.services.question_service import QuestionService
 from backend.services.ranking_service import RankingService
@@ -17,6 +18,7 @@ class App(CTk):
         self.presence_service = PresenceService()
         self.question_service = QuestionService()
         self.ranking_service = RankingService()
+        
 
         #Inicilização da barra horizontal
         self.barrahori = CTkFrame(master = self, fg_color=("#DDE7E7", "#1B1B1B"), corner_radius=0)
@@ -24,6 +26,9 @@ class App(CTk):
 
         self.configuracao = CTkButton(master = self.barrahori, fg_color= "transparent", hover_color= ("#C7C7C7", "#2E2E2E"), text = "Configurações", corner_radius= 0, command = self.abrir_configs)
         self.configuracao.pack(side="left")
+
+        self.titulo = CTkLabel(master= self, text= "Enem da Read", font= ("Montserrat", 32))
+        self.titulo.place(relx= 0.5, rely= 0.1, anchor= "center")
 
         #Inicialização da Lista de Presença
         self.lista = Lista(master = self, fg_color=("#DDE7E7", "#1B1B1B"), corner_radius=0, presence_service= self.presence_service, on_select_participante= self.selecionar_aluno)
@@ -48,7 +53,7 @@ class App(CTk):
         self.barra_gabarito = CTkFrame(master = self, corner_radius=0)
         self.barra_gabarito.place(relx = 0.5, rely = 0.885, relwidth = 0.3, relheight = 0.03, anchor = "center")
 
-        self.aplicar_rank = CTkButton(master = self.barra_gabarito, width = 128, fg_color="#00B6CE", hover_color="#31B3FF", corner_radius=0, text = "Aplicar")
+        self.aplicar_rank = CTkButton(master = self.barra_gabarito, width = 128, fg_color="#00B6CE", hover_color="#31B3FF", corner_radius=0, text = "Aplicar", command = lambda: self.rank.renderizar())
         self.aplicar_rank.pack(side = "left", fill = "both")
 
         self.marcar_todos = CTkButton(master = self.barra_gabarito, width = 128, fg_color="transparent", hover_color="#202020", corner_radius=0, text = "Marcar tudo", command = lambda: self.marcacao(1))
@@ -64,8 +69,11 @@ class App(CTk):
         self.nome_rank = CTkLabel(master = self.barra_nome_rank, text="Ranking")
         self.nome_rank.place(relx = 0.5, rely = 0.5, anchor = "center")
         
-        self.rank = CTkScrollableFrame(master = self, fg_color=("#DDE7E7", "#1B1B1B"), corner_radius=0)
-        self.rank.place(relx = 0.81, rely = 0.55, relwidth = 0.3, relheight = 0.7, anchor = "center")
+        self.rank = Rank(master = self, fg_color=("#DDE7E7", "#1B1B1B"), corner_radius=0)
+        self.rank.place(relx = 0.81, rely = 0.535, relwidth = 0.3, relheight = 0.67, anchor = "center")
+
+        self.barra_rank = CTkFrame(master = self, corner_radius=0)
+        self.barra_rank.place(relx = 0.81, rely = 0.885, relwidth = 0.3, relheight = 0.03, anchor = "center")
 
         
     def selecionar_aluno(self, id, nome):
@@ -86,7 +94,7 @@ class App(CTk):
             return
         self.toplevel = Configuracoes(master= self, presence_service = self.presence_service, question_service= self.question_service, ranking_service= self.ranking_service, on_update= self.atualizar_telas)
         self.toplevel.title("Configurações")
-        self.toplevel.geometry("500x700")
+        self.toplevel.geometry("500x500")
         self.toplevel.lift()
         self.toplevel.attributes("-topmost", True)
         self.toplevel.after(100, lambda: self.toplevel.attributes("-topmost", False))
@@ -98,3 +106,7 @@ class App(CTk):
     def atualizar_telas(self):
         self.lista.renderizar()
         self.gabarito.renderizar()
+        self.rank.renderizar()
+    
+    def copiar(self):
+        copia = self.ranking_service.gerar_ranking()

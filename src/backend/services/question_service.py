@@ -52,6 +52,4 @@ class QuestionService:
         for i in data:
             self.r_repo.mudar_acerto(p_id, i["id"],mark)
 
-    def calcular_nota_maxima(self):
-        questoes = self.q_repo.listar_ordem_numerica()
-        return sum(q["peso"] for q in questoes)
+    
