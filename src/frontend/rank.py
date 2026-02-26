@@ -1,5 +1,6 @@
 from customtkinter import *
 from backend.services.ranking_service import RankingService
+from frontend.theme import COLORS
 
 class Rank(CTkScrollableFrame):
     def __init__(self, master, **kwargs):
@@ -13,12 +14,13 @@ class Rank(CTkScrollableFrame):
         for widget in self.winfo_children():
             widget.destroy()
 
+        self.ranking = self.service.gerar_ranking()
         if not self.ranking:
             CTkLabel(
                 self,
                 text="Nenhuma nota foi computada"
             ).pack(pady=20)
-        self.ranking = self.service.gerar_ranking()
+        
         i = 0
         for p in self.ranking:
             i +=1
@@ -31,7 +33,7 @@ class Rank(CTkScrollableFrame):
         else:
             nota_texto = nota_valor
 
-        linha = CTkFrame(master = self)
+        linha = CTkFrame(master = self, fg_color=COLORS["primary"])
         linha.pack(fill="x", padx=2, pady=2)
 
         posicao = CTkLabel(linha,text=f"#{num}",fg_color="transparent", anchor= "w", width = 20)
@@ -64,7 +66,7 @@ class Rank(CTkScrollableFrame):
             sep1.configure(fg_color= "#794400")
             sep2.configure(fg_color= "#794400")
         if num >= 4 and num <= 5:
-            linha.configure(fg_color= "#5171FD")
-            sep1.configure(fg_color= "#213BB1")
-            sep2.configure(fg_color= "#213BB1")
+            linha.configure(fg_color= "#4B0091")
+            sep1.configure(fg_color= "#440072")
+            sep2.configure(fg_color= "#440072")
         

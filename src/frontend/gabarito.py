@@ -1,4 +1,5 @@
 from customtkinter import *
+from frontend.theme import COLORS
 
 class Gabarito(CTkScrollableFrame):
     def __init__(self, master, question_service,selected, **kwargs):
@@ -31,7 +32,7 @@ class Gabarito(CTkScrollableFrame):
                 self.criar_linha(p)
     
     def criar_linha(self, questao):
-        linha = CTkFrame(master = self)
+        linha = CTkFrame(master = self, fg_color=COLORS["cards"])
         linha.pack(fill="x", padx=2, pady=2)
 
         numero_questao = CTkLabel(
@@ -45,8 +46,8 @@ class Gabarito(CTkScrollableFrame):
             linha,
             text="",
             variable=var,
-            fg_color="#31B3FF",
-            hover_color="#31B3FF",
+            fg_color=COLORS["primary2"],
+            hover_color=COLORS["primary2"],
             corner_radius= 0,
             command=lambda pid=self.selected["id"], qid= questao["id"], v=var:
                 self.service.marcar_acertos(pid,qid,v.get())

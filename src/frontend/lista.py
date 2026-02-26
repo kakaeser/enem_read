@@ -1,4 +1,5 @@
 from customtkinter import *
+from frontend.theme import COLORS
 
 class Lista(CTkScrollableFrame):
     def __init__(self, master, presence_service, on_select_participante, **kwargs):
@@ -25,7 +26,7 @@ class Lista(CTkScrollableFrame):
                 self.criar_linha(p)
     
     def criar_linha(self, participante):
-        linha = CTkFrame(master = self)
+        linha = CTkFrame(master = self, fg_color=COLORS["cards"])
         linha.pack(fill="x", padx=2, pady=2)
 
         var = IntVar(value= int(participante["presente"]))
@@ -34,9 +35,9 @@ class Lista(CTkScrollableFrame):
             text="",
             variable=var,
             width = 20,
-            fg_color="#31B3FF",
-            hover_color="#31B3FF",
-            corner_radius= 0,
+            fg_color=COLORS["primary2"],
+            hover_color=COLORS["primary2"],
+            corner_radius= 4,
             command=lambda pid=participante["id"], v=var:
                 self.service.marcar_presenca(pid, v.get())
         )
@@ -44,9 +45,9 @@ class Lista(CTkScrollableFrame):
         botao_nome = CTkButton(
             linha,
             text=participante["nome"],
-            fg_color="transparent",
-            hover_color=("#EDF0F0", "#353535"),
-            corner_radius= 0 ,
+            fg_color=COLORS["cards"],
+            hover_color=COLORS["hover"],
+            corner_radius= 4 ,
             anchor="w",
             command=lambda:
                 self.on_select_participante(
