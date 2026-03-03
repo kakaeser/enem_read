@@ -69,7 +69,7 @@ PostgreSQL Database
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/enem-da-read.git
+git clone https://github.com/kakaeser/enem-da-read.git
 cd enem-da-read
 
 # Create virtual environment
@@ -208,7 +208,7 @@ This project is currently under active refactoring. Contributions welcome after 
 
 ## 📄 License
 
-[Add your license here]
+[Add your license here] *(coming soon)*
 
 ## 👤 Author
 
