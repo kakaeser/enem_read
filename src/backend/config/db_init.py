@@ -5,7 +5,6 @@ from backend.config.base import Base
 from backend.entities.participante import Participante
 from backend.entities.questao import Questao
 from backend.entities.resposta import Resposta
-from backend.entities.config import Config
 from backend.entities.exam import Exam
 
 

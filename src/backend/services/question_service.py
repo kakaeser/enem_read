@@ -1,5 +1,5 @@
-from backend.repositories.questao_repo import QuestaoRepo
-from backend.repositories.resposta_repo import RespostaRepo
+from backend.repositories.implemations.questao_repo import QuestaoRepo
+from backend.repositories.implemations.resposta_repo import RespostaRepo
 from backend.entities.questao import Questao
 
 class QuestionService:

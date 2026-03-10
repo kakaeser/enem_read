@@ -1,7 +1,7 @@
-from backend.repositories.config_repo import ConfigRepo
-from backend.repositories.participante_repo import ParticipanteRepo
-from backend.repositories.questao_repo import QuestaoRepo
-from backend.repositories.resposta_repo import RespostaRepo
+from backend.repositories.implemations.config_repo import ConfigRepo
+from backend.repositories.implemations.participante_repo import ParticipanteRepo
+from backend.repositories.implemations.questao_repo import QuestaoRepo
+from backend.repositories.implemations.resposta_repo import RespostaRepo
 
 class RankingService:
     def __init__(self):

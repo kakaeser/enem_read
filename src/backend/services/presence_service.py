@@ -1,4 +1,4 @@
-from backend.repositories.participante_repo import ParticipanteRepo
+from backend.repositories.implemations.participante_repo import ParticipanteRepo
 import pandas as pd
 
 class PresenceService:

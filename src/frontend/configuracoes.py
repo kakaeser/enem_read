@@ -1,6 +1,5 @@
 from customtkinter import *
 from tkinter import filedialog
-from backend.seed.seed1 import seed_participantes_json
 
 class Configuracoes(CTkToplevel):
     def __init__(self, master, presence_service,question_service,ranking_service,on_update, **kwargs):
