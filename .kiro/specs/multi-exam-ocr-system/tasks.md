@@ -96,8 +96,8 @@ This implementation plan focuses on delivering a working MVP with core multi-exa
 - [x] 3. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 4. Pydantic schemas for data validation
-  - [ ] 4.1 Create request/response schemas
+- [x] 4. Pydantic schemas for data validation
+  - [x] 4.1 Create request/response schemas
     - Create ExamCreate, ExamUpdate, ExamResponse schemas with validation
     - Create QuestionCreate, QuestionUpdate, QuestionResponse schemas
     - Create ParticipantCreate, ParticipantUpdate, ParticipantResponse schemas
@@ -105,7 +105,7 @@ This implementation plan focuses on delivering a working MVP with core multi-exa
     - Add field validators (min/max length, positive integers, valid answer options)
     - _Requirements: 1.3, 1.4, 1.5, 2.1, 2.4, 2.5, 3.1, 3.5, 4.3_
   
-  - [ ] 4.2 Create OCR and scoring schemas
+  - [x] 4.2 Create OCR and scoring schemas
     - Create ExtractedAnswer schema with question_number, answer, confidence fields
     - Create AnswerKeyResult schema for OCR processing results
     - Create AnswerSheetResult schema for participant answer extraction
