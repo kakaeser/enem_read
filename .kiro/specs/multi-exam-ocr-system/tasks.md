@@ -180,8 +180,8 @@ This implementation plan focuses on delivering a working MVP with core multi-exa
 - [x] 6. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 7. OCR service with Tesseract integration
-  - [ ] 7.1 Implement image preprocessing pipeline
+- [x] 7. OCR service with Tesseract integration
+  - [x] 7.1 Implement image preprocessing pipeline
     - Create OCRService class with image preprocessing methods
     - Implement grayscale conversion
     - Implement orientation detection and correction
@@ -190,7 +190,7 @@ This implementation plan focuses on delivering a working MVP with core multi-exa
     - Implement binarization using Otsu's method
     - _Requirements: 5.1, 6.1_
   
-  - [ ] 7.2 Implement answer key OCR processing
+  - [x] 7.2 Implement answer key OCR processing
     - Create process_answer_key method accepting image file and exam_id
     - Extract question numbers and correct answers using Tesseract
     - Validate extracted question numbers are within exam range
@@ -203,7 +203,7 @@ This implementation plan focuses on delivering a working MVP with core multi-exa
     - **Property 7: OCR Question Number Validation**
     - **Validates: Requirements 5.3**
   
-  - [ ] 7.4 Implement answer sheet OCR processing
+  - [x] 7.4 Implement answer sheet OCR processing
     - Create process_answer_sheet method accepting image file, participant_id, exam_id
     - Extract marked answers for each question using Tesseract
     - Validate extracted question numbers correspond to existing questions
