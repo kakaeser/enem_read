@@ -9,8 +9,8 @@ The Multi-Exam OCR System transforms the existing single-exam "Enem da Read" app
 - **Multi-Exam Management**: Create and manage multiple independent exam sessions with separate configurations
 - **OCR Integration**: Automated extraction of answer keys and participant responses from uploaded photos
 - **Dual Interface Architecture**: 
-  - Web PC Admin Interface (localhost) for full control and real-time monitoring
-  - Photo Upload Interface (mobile-responsive) for photo submission and essay points
+  - Flet Desktop Admin Interface (localhost) for full control and real-time monitoring
+  - Mobile Web Interface (HTML + CSS Tailwind) for photo submission and essay points
 - **Real-Time Dashboard**: Live ranking updates with WebSocket/SSE for administrators and monitor clients
 - **Essay Points Management**: Manual addition of subjective grading scores
 - **Exam History**: Complete historical data with cross-exam performance comparison
@@ -21,7 +21,7 @@ The Multi-Exam OCR System transforms the existing single-exam "Enem da Read" app
 1. **Scalability**: Support hundreds of exams with thousands of participants each
 2. **Accuracy**: Achieve 95%+ OCR accuracy with confidence scoring and manual review
 3. **Performance**: Process answer sheets within 30 seconds, update dashboards within 5 seconds
-4. **Usability**: Mobile-friendly photo upload, intuitive admin interface, clear real-time feedback
+4. **Usability**: Flet desktop admin interface, mobile-friendly HTML/Tailwind photo upload, clear real-time feedback
 5. **Reliability**: Data integrity through database constraints, transaction management, and audit logging
 6. **Maintainability**: Clean architecture with separation of concerns, dependency injection, and comprehensive testing
 
@@ -32,8 +32,8 @@ The Multi-Exam OCR System transforms the existing single-exam "Enem da Read" app
 ```mermaid
 graph TB
     subgraph "Client Layer"
-        A[Web PC Admin Interface<br/>localhost:8000]
-        B[Photo Upload Interface<br/>Mobile Web]
+        A[Flet Desktop Admin Interface<br/>localhost:8000]
+        B[Mobile Web Interface<br/>HTML + Tailwind CSS]
         C[Monitor Clients<br/>Read-Only Dashboard]
     end
     
@@ -115,7 +115,8 @@ graph TB
 - **Image Processing**: OpenCV, Pillow
 - **Data Validation**: Pydantic v2
 - **File Storage**: Local filesystem (development), AWS S3 (production)
-- **Frontend**: HTML/CSS/JavaScript with responsive design (mobile-first for photo upload)
+- **Desktop Frontend**: Flet (Python-based UI framework) — consumes the FastAPI REST API
+- **Mobile Frontend**: HTML + CSS (Tailwind) + vanilla JS — mobile-first, consumes the FastAPI REST API
 
 ## Components and Interfaces
 

@@ -121,8 +121,8 @@ This implementation plan focuses on delivering a working MVP with core multi-exa
     - **Property 8: OCR Answer Option Validation**
     - **Validates: Requirements 5.4**
 
-- [ ] 5. Service layer with business logic
-  - [ ] 5.1 Implement ExamManagerService
+- [x] 5. Service layer with business logic
+  - [x] 5.1 Implement ExamManagerService
     - Create ExamManagerService with dependency-injected repositories
     - Implement create_exam, get_exam, update_exam, delete_exam methods
     - Implement list_exams with filtering support
@@ -138,7 +138,7 @@ This implementation plan focuses on delivering a working MVP with core multi-exa
     - **Property 5: Question Number Uniqueness Within Exam**
     - **Validates: Requirements 2.7**
   
-  - [ ] 5.4 Implement ScoreCalculatorService
+  - [x] 5.4 Implement ScoreCalculatorService
     - Create ScoreCalculatorService with dependency-injected repositories
     - Implement calculate_participant_score method comparing marked vs correct answers
     - Implement case-insensitive answer comparison logic
@@ -162,7 +162,7 @@ This implementation plan focuses on delivering a working MVP with core multi-exa
     - **Property 12: Final Score Calculation**
     - **Validates: Requirements 18.7, 18.8**
   
-  - [ ] 5.8 Implement ExamHistoryService
+  - [x] 5.8 Implement ExamHistoryService
     - Create ExamHistoryService with dependency-injected repositories
     - Implement get_exam_results with ranked participant list
     - Implement export_results_to_excel using pandas
@@ -177,7 +177,7 @@ This implementation plan focuses on delivering a working MVP with core multi-exa
     - Test error handling and validation
     - _Requirements: 1.1, 7.1, 8.1, 9.1_
 
-- [ ] 6. Checkpoint - Ensure all tests pass
+- [x] 6. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 7. OCR service with Tesseract integration
