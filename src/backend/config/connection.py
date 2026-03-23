@@ -15,12 +15,8 @@ class DBConnectionHandler:
 
     @staticmethod
     def _create_engine():
-        base_dir = os.path.join(
-            os.environ.get("LOCALAPPDATA", os.getcwd()),
-            "enem_read"
-        )
-
-        os.makedirs(base_dir, exist_ok=True)
+        base_dir = os.path.join(os.path.dirname(__file__), "..")
+        base_dir = os.path.abspath(base_dir)
 
         db_path = os.path.join(base_dir, "database.db")
 

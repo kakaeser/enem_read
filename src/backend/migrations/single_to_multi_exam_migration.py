@@ -14,7 +14,6 @@ from backend.entities.exam import Exam
 from backend.entities.participante import Participante
 from backend.entities.questao import Questao
 from backend.entities.resposta import Resposta
-from backend.entities.config import Config
 from datetime import datetime
 import logging
 
@@ -47,14 +46,13 @@ def create_legacy_exam(session: Session) -> Exam:
     """
     logger.info("Creating Legacy Exam record...")
     
-    # Get existing config values
-    config = session.query(Config).first()
-    nota_max = config.nota_max if config else None
-    nota_simb = config.nota_simb if config else 1000
+    # Get existing config values via raw SQL to avoid import dependency
+    config_row = session.execute(text("SELECT nota_max, nota_simb FROM config LIMIT 1")).fetchone()
+    nota_simb = config_row[1] if config_row and config_row[1] else 1000
     
     # Count existing questions to set questions_numbers
     from sqlalchemy import func
-    questions_count = session.query(func.count(Questao.id)).scalar() or 0
+    questions_count = session.execute(text("SELECT COUNT(*) FROM questoes")).scalar() or 0
     
     # Create legacy exam
     legacy_exam = Exam(
