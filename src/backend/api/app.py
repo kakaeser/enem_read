@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -9,12 +11,22 @@ from backend.api.v1.endpoints.participants import (
     participants_router,
 )
 from backend.api.v1.endpoints.results import router as results_router
+from backend.config.db_init import async_init_db
 from backend.core.exceptions import AppException
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialize the database on startup."""
+    await async_init_db()
+    yield
+
 
 app = FastAPI(
     title="Enem da Read API",
     version="2.0.0",
     description="Multi-exam OCR system API",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -30,7 +42,7 @@ app.add_middleware(
 async def app_exception_handler(request: Request, exc: AppException):
     return JSONResponse(
         status_code=exc.status_code,
-        content={"error": exc.message},
+        content={"error": exc.message, "status_code": exc.status_code},
     )
 
 

@@ -26,4 +26,4 @@ class OCRProcessingException(AppException):
     """OCR processing failure exception"""
 
     def __init__(self, message: str):
-        super().__init__(message, status_code=500)
+        super().__init__(message, status_code=422)
