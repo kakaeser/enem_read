@@ -307,8 +307,8 @@ This implementation plan focuses on delivering a working MVP with core multi-exa
     - Add command-line interface for database setup
     - _Requirements: 13.1, 13.2_
 
-- [ ] 12. Integration and wiring
-  - [ ] 12.1 Create FastAPI application instance
+- [x] 12. Integration and wiring
+  - [x] 12.1 Create FastAPI application instance
     - Create main FastAPI app with metadata
     - Configure CORS middleware for development
     - Register all API routers
@@ -316,7 +316,7 @@ This implementation plan focuses on delivering a working MVP with core multi-exa
     - Add startup event for database initialization
     - _Requirements: 1.1, 5.1, 6.1, 9.1_
   
-  - [ ] 12.2 Create dependency injection setup
+  - [x] 12.2 Create dependency injection setup
     - Create get_exam_repository dependency
     - Create get_question_repository dependency
     - Create get_response_repository dependency
@@ -335,7 +335,7 @@ This implementation plan focuses on delivering a working MVP with core multi-exa
     - Test error scenarios and edge cases
     - _Requirements: 1.1, 5.5, 6.6, 7.1, 9.5_
 
-- [ ] 13. Final checkpoint - Ensure all tests pass
+- [x] 13. Final checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 
 from backend.api.dependencies import (
     get_exam_repository,
+    get_ocr_service,
     get_question_repository,
     get_response_repository,
 )
@@ -47,6 +48,7 @@ async def process_answer_key(
     file: UploadFile = File(...),
     exam_repo: AsyncExamRepository = Depends(get_exam_repository),
     question_repo: AsyncQuestionRepository = Depends(get_question_repository),
+    ocr_service: OCRService = Depends(get_ocr_service),
 ):
     """
     Upload a JPEG or PNG image of the answer key for the given exam.
@@ -63,7 +65,6 @@ async def process_answer_key(
 
     image_bytes = await _validate_image(file)
 
-    ocr_service = OCRService()
     try:
         result = await ocr_service.process_answer_key(
             image_file=image_bytes,
@@ -99,6 +100,7 @@ async def process_answer_sheet(
     exam_repo: AsyncExamRepository = Depends(get_exam_repository),
     question_repo: AsyncQuestionRepository = Depends(get_question_repository),
     response_repo: AsyncResponseRepository = Depends(get_response_repository),
+    ocr_service: OCRService = Depends(get_ocr_service),
 ):
     """
     Upload a JPEG or PNG image of a participant's answer sheet for the given exam.
@@ -115,7 +117,6 @@ async def process_answer_sheet(
 
     image_bytes = await _validate_image(file)
 
-    ocr_service = OCRService()
     try:
         result = await ocr_service.process_answer_sheet(
             image_file=image_bytes,

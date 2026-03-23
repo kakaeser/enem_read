@@ -8,6 +8,7 @@ from backend.repositories.implemations.async_question_repo import AsyncQuestionR
 from backend.repositories.implemations.async_response_repo import AsyncResponseRepository
 from backend.services.exam_history_service import ExamHistoryService
 from backend.services.exam_manager_service import ExamManagerService
+from backend.services.ocr.ocr_service import OCRService
 from backend.services.score_calculator_service import ScoreCalculatorService
 
 
@@ -76,3 +77,8 @@ def get_exam_history_service(
         response_repo=response_repo,
         score_service=score_service,
     )
+
+
+def get_ocr_service() -> OCRService:
+    """OCR service dependency — stateless, no DB session required."""
+    return OCRService()
