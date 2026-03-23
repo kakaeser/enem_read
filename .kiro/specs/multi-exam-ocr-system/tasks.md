@@ -55,7 +55,7 @@ This implementation plan focuses on delivering a working MVP with core multi-exa
     - Transform existing Resposta.acertou boolean to marked_answer placeholders
     - Add validation checks for data integrity after migration
     - _Requirements: 13.1, 13.2, 13.3, 13.4, 13.7_
-  
+
   - [ ]* 1.5 Write unit tests for database migration
     - Test migration creates legacy exam correctly
     - Test all existing records are associated with legacy exam
@@ -220,8 +220,8 @@ This implementation plan focuses on delivering a working MVP with core multi-exa
     - Test error handling for invalid images
     - _Requirements: 5.2, 6.3_
 
-- [ ] 8. FastAPI endpoints and routing
-  - [ ] 8.1 Create exam management endpoints
+- [x] 8. FastAPI endpoints and routing
+  - [x] 8.1 Create exam management endpoints
     - Create POST /api/v1/exams endpoint for exam creation
     - Create GET /api/v1/exams endpoint for listing exams
     - Create GET /api/v1/exams/{exam_id} endpoint for exam details
@@ -231,7 +231,7 @@ This implementation plan focuses on delivering a working MVP with core multi-exa
     - Add error handling with proper HTTP status codes
     - _Requirements: 1.1, 1.6, 1.7_
   
-  - [ ] 8.2 Create participant management endpoints
+  - [x] 8.2 Create participant management endpoints
     - Create POST /api/v1/exams/{exam_id}/participants endpoint for manual participant addition
     - Create GET /api/v1/exams/{exam_id}/participants endpoint for listing participants
     - Create PATCH /api/v1/participants/{participant_id} endpoint for updating participant (name, attendance, essay_points)
@@ -239,7 +239,7 @@ This implementation plan focuses on delivering a working MVP with core multi-exa
     - Add validation for participant data
     - _Requirements: 17.1, 17.2, 17.3, 17.4, 17.5, 17.6, 17.7, 18.3, 18.4, 18.5_
   
-  - [ ] 8.3 Create OCR processing endpoints
+  - [x] 8.3 Create OCR processing endpoints
     - Create POST /api/v1/exams/{exam_id}/ocr/answer-key endpoint for answer key upload
     - Create POST /api/v1/exams/{exam_id}/ocr/answer-sheet endpoint for answer sheet upload
     - Handle multipart/form-data file uploads
@@ -248,7 +248,7 @@ This implementation plan focuses on delivering a working MVP with core multi-exa
     - Return OCR processing results with extraction summary
     - _Requirements: 5.1, 5.5, 6.1, 6.2, 6.6_
   
-  - [ ] 8.4 Create results and export endpoints
+  - [x] 8.4 Create results and export endpoints
     - Create GET /api/v1/exams/{exam_id}/results endpoint for exam results with ranking
     - Create GET /api/v1/exams/{exam_id}/statistics endpoint for aggregate statistics
     - Create GET /api/v1/exams/{exam_id}/export/excel endpoint for Excel export
@@ -265,7 +265,7 @@ This implementation plan focuses on delivering a working MVP with core multi-exa
     - Test error responses and validation
     - _Requirements: 1.1, 5.5, 6.6, 9.5_
 
-- [ ] 9. Checkpoint - Ensure all tests pass
+- [x] 9. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 10. Configuration and error handling
