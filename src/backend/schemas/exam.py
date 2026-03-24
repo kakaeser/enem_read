@@ -18,12 +18,14 @@ class ExamUpdate(BaseModel):
     questions_numbers: Optional[int] = Field(None, gt=0)
     symbolic_note: Optional[int] = Field(None, gt=0)
     status: Optional[str] = Field(None, pattern="^(draft|in_progress|completed)$")
+    ended_at: Optional[datetime] = None
 
 
 class ExamResponse(ExamBase):
     exam_id: int
     created_at: datetime
     updated_at: datetime
+    ended_at: Optional[datetime] = None
     status: str
 
     class Config:

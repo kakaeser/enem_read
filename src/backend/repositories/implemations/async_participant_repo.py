@@ -62,6 +62,15 @@ class AsyncParticipantRepository(IParticipantRepository):
         )
         return list(result.scalars().all())
 
+    async def get_absent_by_exam_id(self, exam_id: int) -> List[Participante]:
+        """Get all absent participants for a specific exam"""
+        result = await self.session.execute(
+            select(Participante)
+            .where(Participante.exam_id == exam_id, Participante.presente == False)
+            .order_by(Participante.nome)
+        )
+        return list(result.scalars().all())
+
     async def update(self, participant: Participante) -> Participante:
         """Update an existing participant"""
         await self.session.merge(participant)

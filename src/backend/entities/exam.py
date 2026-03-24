@@ -13,6 +13,7 @@ class Exam(Base):
     symbolic_note = Column(Integer, nullable=False, default=1000)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    ended_at = Column(DateTime, nullable=True, default=None)
     status = Column(String(50), default="draft")  # draft, in_progress, completed
 
     # Relationships

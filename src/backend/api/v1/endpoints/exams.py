@@ -1,4 +1,5 @@
 from typing import List, Optional
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -108,3 +109,31 @@ async def delete_exam(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(exc),
         )
+
+
+@router.post("/{exam_id}/finish", response_model=ExamResponse)
+async def finish_exam(
+    exam_id: int,
+    service: ExamManagerService = Depends(get_exam_manager_service),
+):
+    """
+    Lock an exam: set status='completed' and ended_at=utcnow() server-side.
+    Returns 409 if already completed, 404 if not found.
+    Requirements: 17.1, 17.2, 17.3, 17.4
+    """
+    try:
+        exam_response = await service.get_exam(exam_id)
+    except (ValueError, NotFoundException) as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+    if exam_response.status == "completed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Exam {exam_id} is already completed",
+        )
+
+    update = ExamUpdate(status="completed", ended_at=datetime.utcnow())
+    try:
+        return await service.update_exam(exam_id, update)
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))

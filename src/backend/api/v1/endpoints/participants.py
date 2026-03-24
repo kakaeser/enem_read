@@ -1,15 +1,22 @@
-from typing import List
+from typing import List, Optional
+from io import BytesIO
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import pandas as pd
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
 from fastapi.responses import JSONResponse
 
 from backend.api.dependencies import (
     get_exam_manager_service,
     get_participant_repository,
+    get_question_repository,
+    get_response_repository,
 )
 from backend.core.exceptions import NotFoundException
 from backend.repositories.implemations.async_participant_repo import AsyncParticipantRepository
+from backend.repositories.implemations.async_question_repo import AsyncQuestionRepository
+from backend.repositories.implemations.async_response_repo import AsyncResponseRepository
 from backend.schemas.participante import ParticipantAddRequest, ParticipantCreate, ParticipantResponse, ParticipantUpdate
+from backend.schemas.scoring import QuestionResponseDetail
 from backend.services.exam_manager_service import ExamManagerService
 
 # Routes nested under /exams for participant collection operations
@@ -70,28 +77,30 @@ async def add_participant(
 )
 async def list_participants(
     exam_id: int,
+    presente: Optional[bool] = Query(None),
     service: ExamManagerService = Depends(get_exam_manager_service),
     participant_repo: AsyncParticipantRepository = Depends(get_participant_repository),
 ):
     """
-    List all participants for a given exam.
-    Requirements: 17.6, 17.7
+    List participants for a given exam.
+    Optional ?presente=true/false filter.
+    Requirements: 14.1, 14.2, 14.3
     """
-    # Verify exam exists
     try:
         await service.get_exam(exam_id)
-    except ValueError as exc:
+    except (ValueError, NotFoundException) as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-    except NotFoundException as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=exc.message)
 
     try:
-        participants = await participant_repo.get_by_exam_id(exam_id)
+        if presente is None:
+            participants = await participant_repo.get_by_exam_id(exam_id)
+        elif presente:
+            participants = await participant_repo.get_present_by_exam_id(exam_id)
+        else:
+            participants = await participant_repo.get_absent_by_exam_id(exam_id)
         return [ParticipantResponse.model_validate(p) for p in participants]
     except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)
-        )
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
 
 @participants_router.patch(
@@ -153,3 +162,133 @@ async def delete_participant(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)
         )
+
+
+# ---------------------------------------------------------------------------
+# Bulk import — Task 3.2  (Requirements 15.1–15.7)
+# ---------------------------------------------------------------------------
+
+@exam_participants_router.post(
+    "/{exam_id}/participants/import",
+    status_code=status.HTTP_200_OK,
+)
+async def import_participants(
+    exam_id: int,
+    file: UploadFile = File(...),
+    service: ExamManagerService = Depends(get_exam_manager_service),
+    participant_repo: AsyncParticipantRepository = Depends(get_participant_repository),
+):
+    """
+    Bulk-import participants from a CSV or Excel file.
+    CSV: column 'nome' or 'Nome'. Excel: column 'Nome'.
+    Returns ImportResult: {imported, skipped, errors}.
+    Requirements: 15.1–15.7
+    """
+    try:
+        await service.get_exam(exam_id)
+    except (ValueError, NotFoundException) as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+    filename = file.filename or ""
+    content = await file.read()
+
+    if filename.endswith(".csv"):
+        try:
+            df = pd.read_csv(BytesIO(content))
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"Could not parse CSV: {exc}")
+        col = next((c for c in df.columns if c.strip().lower() == "nome"), None)
+        if col is None:
+            raise HTTPException(status_code=422, detail="CSV must contain a 'nome' or 'Nome' column")
+    elif filename.endswith((".xlsx", ".xls")):
+        try:
+            df = pd.read_excel(BytesIO(content))
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"Could not parse Excel file: {exc}")
+        col = next((c for c in df.columns if c.strip().lower() == "nome"), None)
+        if col is None:
+            raise HTTPException(status_code=422, detail="Excel file must contain a 'Nome' column")
+    else:
+        raise HTTPException(status_code=422, detail="Unsupported file format. Use CSV or Excel (.xlsx/.xls)")
+
+    from backend.entities.participante import Participante
+
+    imported = 0
+    skipped = 0
+    errors: list[str] = []
+
+    for raw in df[col]:
+        if pd.isna(raw) or str(raw).strip() == "":
+            skipped += 1
+            continue
+        nome = str(raw).strip()
+        existing = await participant_repo.get_by_exam_and_name(exam_id, nome)
+        if existing is not None:
+            skipped += 1
+            continue
+        try:
+            p = Participante(exam_id=exam_id, nome=nome, presente=False, essay_points=0.0)
+            await participant_repo.create(p)
+            imported += 1
+        except Exception as exc:
+            errors.append(f"Row '{nome}': {exc}")
+
+    return {"imported": imported, "skipped": skipped, "errors": errors}
+
+
+# ---------------------------------------------------------------------------
+# Per-participant response detail — Task 4.1  (Requirements 16.1–16.4)
+# ---------------------------------------------------------------------------
+
+@exam_participants_router.get(
+    "/{exam_id}/participants/{participant_id}/responses",
+    response_model=List[QuestionResponseDetail],
+)
+async def get_participant_responses(
+    exam_id: int,
+    participant_id: int,
+    service: ExamManagerService = Depends(get_exam_manager_service),
+    participant_repo: AsyncParticipantRepository = Depends(get_participant_repository),
+    question_repo: AsyncQuestionRepository = Depends(get_question_repository),
+    response_repo: AsyncResponseRepository = Depends(get_response_repository),
+):
+    """
+    Per-question answer breakdown for a single participant.
+    Ordered by question_number ascending.
+    Requirements: 16.1–16.4
+    """
+    try:
+        await service.get_exam(exam_id)
+    except (ValueError, NotFoundException) as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+    participant = await participant_repo.get_by_id(participant_id)
+    if participant is None or participant.exam_id != exam_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Participant {participant_id} not found in exam {exam_id}",
+        )
+
+    questions = await question_repo.get_by_exam_id(exam_id)
+    responses = await response_repo.get_by_participant_and_exam(participant_id, exam_id)
+    response_map = {r.quest_id: r for r in responses}
+
+    result: List[QuestionResponseDetail] = []
+    for q in sorted(questions, key=lambda x: x.numero):
+        resp = response_map.get(q.id)
+        if q.question_correct_answer is None:
+            correct_answer = None
+            correct = None
+        else:
+            correct_answer = q.question_correct_answer
+            correct = (resp.marked_answer == correct_answer) if resp and resp.marked_answer else False
+
+        result.append(QuestionResponseDetail(
+            question_number=q.numero,
+            correct_answer=correct_answer,
+            marked_answer=resp.marked_answer if resp else None,
+            correct=correct,
+            peso=q.peso,
+        ))
+
+    return result

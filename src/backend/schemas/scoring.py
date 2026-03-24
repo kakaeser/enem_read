@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from typing import Optional
 
 
 class ScoreBreakdown(BaseModel):
@@ -23,3 +24,12 @@ class ExamStatistics(BaseModel):
     highest_score: float
     lowest_score: float
     std_deviation: float
+
+
+class QuestionResponseDetail(BaseModel):
+    """Per-question answer breakdown for a single participant. Requirements: 16.1"""
+    question_number: int
+    correct_answer: Optional[str]
+    marked_answer: Optional[str]
+    correct: Optional[bool]
+    peso: int
