@@ -55,8 +55,8 @@ Implement the Flet desktop app, mobile HTML upload page, and minimal backend add
 - [x] 6. Checkpoint — Backend complete
   - Ensure all backend tests pass. Ask the user if questions arise.
 
-- [ ] 7. Desktop — i18n module
-  - [ ] 7.1 Create `src/frontend/desktop/i18n.py` with `LANGUAGES`, `STRINGS` dict (pt_BR + en), `set_language`, `get_language`, and `t(key)` fallback helper
+- [x] 7. Desktop — i18n module
+  - [x] 7.1 Create `src/frontend/desktop/i18n.py` with `LANGUAGES`, `STRINGS` dict (pt_BR + en), `set_language`, `get_language`, and `t(key)` fallback helper
     - _Requirements: 9.1, 9.2, 9.3, 9.4_
   - [ ]* 7.2 Write property test for `t(key)` lookup and fallback (Property 9)
     - **Property 9: i18n translation lookup and fallback**
@@ -65,15 +65,15 @@ Implement the Flet desktop app, mobile HTML upload page, and minimal backend add
     - **Property 10: i18n rejects unsupported language codes**
     - **Validates: Requirements 9.4**
 
-- [ ] 8. Desktop — AppConfig persistence
-  - [ ] 8.1 Create `src/frontend/desktop/app_config.py` with `load_config` (returns defaults when file absent) and `save_config` (creates `~/.enem_da_read/` if needed)
+- [x] 8. Desktop — AppConfig persistence
+  - [x] 8.1 Create `src/frontend/desktop/app_config.py` with `load_config` (returns defaults when file absent) and `save_config` (creates `~/.enem_da_read/` if needed)
     - _Requirements: 10.1, 10.2, 10.3_
   - [ ]* 8.2 Write property test for save/load round-trip (Property 11)
     - **Property 11: AppConfig save/load round-trip**
     - **Validates: Requirements 10.2, 10.3**
 
-- [ ] 9. Desktop — Theme module
-  - [ ] 9.1 Create `src/frontend/desktop/theme.py` with `ThemeConfig` dataclass and `THEMES` dict containing `dark_blue`, `dark_green`, `light`, `high_contrast` entries
+- [x] 9. Desktop — Theme module
+  - [x] 9.1 Create `src/frontend/desktop/theme.py` with `ThemeConfig` dataclass and `THEMES` dict containing `dark_blue`, `dark_green`, `light`, `high_contrast` entries
     - _Requirements: from design (ThemeConfig interface)_
 
 - [ ] 10. Desktop — APILauncher
