@@ -76,8 +76,8 @@ Implement the Flet desktop app, mobile HTML upload page, and minimal backend add
   - [x] 9.1 Create `src/frontend/desktop/theme.py` with `ThemeConfig` dataclass and `THEMES` dict containing `dark_blue`, `dark_green`, `light`, `high_contrast` entries
     - _Requirements: from design (ThemeConfig interface)_
 
-- [ ] 10. Desktop — APILauncher
-  - [ ] 10.1 Create `src/frontend/desktop/api_launcher.py` with `APILauncher` class
+- [x] 10. Desktop — APILauncher
+  - [x] 10.1 Create `src/frontend/desktop/api_launcher.py` with `APILauncher` class
     - `start_if_needed()`: probe `/health`; if unreachable, spawn uvicorn subprocess and poll until ready or timeout; raise `RuntimeError` on timeout
     - `stop()`: terminate only the subprocess this instance started
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
