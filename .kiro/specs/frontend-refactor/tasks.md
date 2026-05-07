@@ -98,16 +98,16 @@ Implement the Flet desktop app, mobile HTML upload page, and minimal backend add
     - Cover: `list_participants?presente=true`, `import_participants`, `finish_exam` (404 and 409), `get_participant_responses`
     - _Requirements: from design testing strategy_
 
-- [ ] 13. Desktop — Shared components
-  - [ ] 13.1 Create `src/frontend/desktop/views/components.py` with `SharePanel`, `LanguageSwitcher`, `EndExamButton`, `ReadOnlyBanner`
+- [x] 13. Desktop — Shared components
+  - [x] 13.1 Create `src/frontend/desktop/views/components.py` with `SharePanel`, `LanguageSwitcher`, `EndExamButton`, `ReadOnlyBanner`
     - `SharePanel`: QR code via `qrcode` lib → base64 → `ft.Image`; read-only URL field; copy-link button
     - `EndExamButton`: confirmation dialog; calls `finish_exam`; handles 409 as success; re-enables on other errors
     - `ReadOnlyBanner`: lock icon + `ended_at` timestamp; amber background
     - `LanguageSwitcher`: `ft.Dropdown` pre-selected to `get_language()`; calls `on_change(lang)` on selection
     - _Requirements: 3.1, 3.2, 8.1, 8.2, 8.3, 8.4, 8.5_
 
-- [ ] 14. Desktop — LanguageSelectView
-  - [ ] 14.1 Create `src/frontend/desktop/views/language_select.py` with `LanguageSelectView`
+- [x] 14. Desktop — LanguageSelectView
+  - [x] 14.1 Create `src/frontend/desktop/views/language_select.py` with `LanguageSelectView`
     - Two large buttons (🇧🇷 Português / 🇺🇸 English); calls `on_language_selected(lang)`; does not call `set_language` or `save_config` directly
     - _Requirements: 11.1, 11.2_
 
