@@ -82,15 +82,15 @@ Implement the Flet desktop app, mobile HTML upload page, and minimal backend add
     - `stop()`: terminate only the subprocess this instance started
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
 
-- [ ] 11. Desktop — MobileServerLauncher
-  - [ ] 11.1 Create `src/frontend/desktop/mobile_server.py` with `MobileServerLauncher` class
+- [x] 11. Desktop — MobileServerLauncher
+  - [x] 11.1 Create `src/frontend/desktop/mobile_server.py` with `MobileServerLauncher` class
     - LAN IP detection via `socket.getaddrinfo`; fallback to `127.0.0.1` with warning
     - Port retry on `port+1`, `port+2`; raise `OSError` if all fail
     - Serve `mobile_dir` via `http.server.HTTPServer` in a daemon thread
     - _Requirements: 2.1, 2.2, 2.3, 2.4_
 
-- [ ] 12. Desktop — APIClient
-  - [ ] 12.1 Create `src/frontend/desktop/api_client.py` with `APIClient` async httpx wrapper
+- [x] 12. Desktop — APIClient
+  - [x] 12.1 Create `src/frontend/desktop/api_client.py` with `APIClient` async httpx wrapper
     - Implement all methods from design: `list_exams`, `get_exam_results`, `get_exam_statistics`, `list_participants` (with optional `presente` param), `update_participant`, `add_participant`, `import_participants`, `get_participant_score`, `get_participant_responses`, `create_exam`, `finish_exam`
     - Raise `APIError` on non-2xx; never return `None` (return `[]` or `{}` for empty)
     - _Requirements: from design (APIClient interface)_
