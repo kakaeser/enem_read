@@ -111,14 +111,14 @@ Implement the Flet desktop app, mobile HTML upload page, and minimal backend add
     - Two large buttons (🇧🇷 Português / 🇺🇸 English); calls `on_language_selected(lang)`; does not call `set_language` or `save_config` directly
     - _Requirements: 11.1, 11.2_
 
-- [ ] 15. Desktop — HomeView
-  - [ ] 15.1 Create `src/frontend/desktop/views/home.py` with `HomeView`
+- [x] 15. Desktop — HomeView
+  - [x] 15.1 Create `src/frontend/desktop/views/home.py` with `HomeView`
     - Section A: create form with inline validation (blank name, non-positive int); calls `create_exam` on valid submit; invokes `on_exam_ready`
     - Section B: scrollable exam list from `list_exams()`; empty state message; refresh button; 🔒 badge for completed exams
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6_
 
-- [ ] 16. Desktop — DashboardView
-  - [ ] 16.1 Create `src/frontend/desktop/views/dashboard.py` with `DashboardView`
+- [x] 16. Desktop — DashboardView
+  - [x] 16.1 Create `src/frontend/desktop/views/dashboard.py` with `DashboardView`
     - `ft.DataTable` with Rank, Name, Score, Accuracy % columns; stats row (avg/highest/lowest) above table
     - Refresh button; row click opens `ParticipantDetailView`; `read_only` flag passed through
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5_
