@@ -123,14 +123,14 @@ Implement the Flet desktop app, mobile HTML upload page, and minimal backend add
     - Refresh button; row click opens `ParticipantDetailView`; `read_only` flag passed through
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5_
 
-- [ ] 17. Desktop — PresenceView
-  - [ ] 17.1 Create `src/frontend/desktop/views/presence.py` with `PresenceView`
+- [x] 17. Desktop — PresenceView
+  - [x] 17.1 Create `src/frontend/desktop/views/presence.py` with `PresenceView`
     - Participant rows with `ft.Switch` bound to `presente`; optimistic toggle with revert on API error
     - `read_only=True` disables all switches and hides import button; name click opens `ParticipantDetailView`
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5_
 
-- [ ] 18. Desktop — ParticipantDetailView
-  - [ ] 18.1 Create `src/frontend/desktop/views/participant_detail.py` with `ParticipantDetailView`
+- [x] 18. Desktop — ParticipantDetailView
+  - [x] 18.1 Create `src/frontend/desktop/views/participant_detail.py` with `ParticipantDetailView`
     - `asyncio.gather` for parallel `get_participant_score` + `get_participant_responses` calls
     - Header: name, rank badge, final score; score breakdown row; per-question `ft.DataTable` (Q#, Correct Answer, Their Answer, Result ✓/✗/—, Weight)
     - Essay points field with save button; validation (negative/non-numeric → snackbar, no API call); `read_only` hides save button
