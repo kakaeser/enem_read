@@ -137,11 +137,11 @@ Implement the Flet desktop app, mobile HTML upload page, and minimal backend add
     - Close button invokes `on_close()`
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6_
 
-- [ ] 19. Checkpoint — Desktop views complete
+- [x] 19. Checkpoint — Desktop views complete
   - Ensure all desktop view files are importable and tests pass. Ask the user if questions arise.
 
-- [ ] 20. Desktop — main.py entry point
-  - [ ] 20.1 Create `src/frontend/desktop/main.py` wiring everything together
+- [x] 20. Desktop — main.py entry point
+  - [x] 20.1 Create `src/frontend/desktop/main.py` wiring everything together
     - On startup: `load_config()` → show `LanguageSelectView` if no language saved → `set_language` → start `APILauncher` → start `MobileServerLauncher` → show `HomeView`
     - `openExamWorkspace(exam_id)`: fetch exam, determine `read_only`, build `DashboardView` + `PresenceView` + `SharePanel` + `EndExamButton`/`ReadOnlyBanner`
     - `page.on_disconnect`: call `launcher.stop()` and `mobile_server.stop()`

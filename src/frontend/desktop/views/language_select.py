@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, Optional
 
 import flet as ft
 
 
-class LanguageSelectView(ft.UserControl):
+class LanguageSelectView:
     """First-launch language selection screen.
 
     Displays two large buttons for the user to pick their preferred language.
@@ -20,10 +20,9 @@ class LanguageSelectView(ft.UserControl):
         self,
         on_language_selected: Callable[[str], None],
     ) -> None:
-        super().__init__()
         self.on_language_selected = on_language_selected
 
-    def build(self) -> ft.Control:
+    def build(self, page: Optional[ft.Page] = None) -> ft.Control:
         def select_pt(e: ft.ControlEvent) -> None:
             self.on_language_selected("pt_BR")
 
