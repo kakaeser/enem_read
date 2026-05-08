@@ -1,4 +1,5 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy import event, text
 from typing import AsyncGenerator
 
 from backend.core.config import settings
@@ -21,6 +22,16 @@ class AsyncDBConnectionHandler:
                 # Connection pool settings for SQLite (StaticPool keeps one connection)
                 connect_args={"check_same_thread": False},
             )
+
+            # Enable SQLite foreign key enforcement on every new connection.
+            # Without this, SQLite ignores FK constraints entirely, so orphaned
+            # rows can accumulate even when the schema defines FK columns.
+            @event.listens_for(cls._engine.sync_engine, "connect")
+            def set_sqlite_pragma(dbapi_conn, connection_record):
+                cursor = dbapi_conn.cursor()
+                cursor.execute("PRAGMA foreign_keys=ON")
+                cursor.close()
+
         return cls._engine
 
     @classmethod

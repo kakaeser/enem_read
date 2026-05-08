@@ -12,16 +12,42 @@ logger = logging.getLogger(__name__)
 
 
 class _DirectoryHandler(http.server.SimpleHTTPRequestHandler):
-    """HTTP request handler that serves files from a fixed directory."""
+    """HTTP request handler that serves files from a fixed directory.
 
-    # Set per-instance via a class-level attribute injected before construction
+    For index.html, replaces the placeholder __API_BASE__ with the actual
+    API URL so the phone always hits the correct host:port.
+    """
+
     _serve_dir: str = ""
+    _api_base: str = ""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=self.__class__._serve_dir, **kwargs)
 
+    def do_GET(self) -> None:
+        """Serve index.html with __API_BASE__ replaced; pass everything else through."""
+        if self.path in ("/", "/index.html"):
+            index_path = os.path.join(self.__class__._serve_dir, "index.html")
+            try:
+                with open(index_path, "rb") as f:
+                    content = f.read()
+                # Inject the real API base URL
+                content = content.replace(
+                    b"__API_BASE__",
+                    self.__class__._api_base.encode(),
+                )
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(content)))
+                self.end_headers()
+                self.wfile.write(content)
+            except Exception as exc:
+                logger.error("Failed to serve index.html: %s", exc)
+                self.send_error(500)
+        else:
+            super().do_GET()
+
     def log_message(self, format: str, *args) -> None:  # noqa: A002
-        """Suppress default stderr logging; route through Python logging instead."""
         logger.debug("MobileServer: " + format, *args)
 
 
@@ -35,9 +61,10 @@ class MobileServerLauncher:
     Requirements: 2.1, 2.2, 2.3, 2.4
     """
 
-    def __init__(self, mobile_dir: str, port: int = 8080) -> None:
+    def __init__(self, mobile_dir: str, port: int = 8080, api_port: int = 8000) -> None:
         self._mobile_dir = os.path.abspath(mobile_dir)
         self._port = port
+        self._api_port = api_port
         self._actual_port: int | None = None
         self._lan_ip: str | None = None
         self._server: socketserver.TCPServer | None = None
@@ -58,7 +85,7 @@ class MobileServerLauncher:
             If all three port candidates (port, port+1, port+2) are in use.
         """
         self._lan_ip = self._detect_lan_ip()
-        self._server = self._bind_server()
+        self._server = self._bind_server(self._lan_ip)
         self._actual_port = self._server.server_address[1]
 
         self._thread = threading.Thread(
@@ -123,7 +150,8 @@ class MobileServerLauncher:
             logger.warning(
                 "LAN IP detection failed (%s); falling back to 127.0.0.1", exc
             )
-            return "127.0.0.1"
+            # MUDAR AQUI O IPV4 QUANDO MUDAR DE REDE
+            return "192.168.0.85"
 
         # No non-loopback IPv4 found
         logger.warning(
@@ -132,19 +160,14 @@ class MobileServerLauncher:
         )
         return "127.0.0.1"
 
-    def _bind_server(self) -> socketserver.TCPServer:
-        """Try to bind an HTTPServer on port, port+1, port+2.
-
-        Raises ``OSError`` if all three candidates are in use
-        (Requirement 2.3).
-        """
-        # Build a handler class that is bound to the correct directory.
-        # We create a fresh subclass so that concurrent instances don't
-        # interfere with each other's _serve_dir class attribute.
+    def _bind_server(self, lan_ip: str) -> socketserver.TCPServer:
+        """Try to bind an HTTPServer on port, port+1, port+2."""
         serve_dir = self._mobile_dir
+        api_base = f"http://{lan_ip}:{self._api_port}"
 
         class BoundHandler(_DirectoryHandler):
             _serve_dir = serve_dir
+            _api_base = api_base
 
         for attempt in range(3):
             candidate_port = self._port + attempt

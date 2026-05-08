@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 
@@ -10,7 +10,16 @@ class ExamBase(BaseModel):
 
 
 class ExamCreate(ExamBase):
-    pass
+    """
+    weight_mode:
+      "default"       — all questions peso=1
+      "even_questions"— even-numbered questions (2,4,6…) get peso=2, others peso=1
+      "odd_questions" — odd-numbered questions (1,3,5…) get peso=2, others peso=1
+      "custom"        — questions listed in heavy_questions get peso=2, others peso=1
+    heavy_questions: list of question numbers that should have peso=2 (only for "custom")
+    """
+    weight_mode: str = Field("default", pattern="^(default|even_questions|odd_questions|custom)$")
+    heavy_questions: Optional[List[int]] = None  # question numbers with peso=2
 
 
 class ExamUpdate(BaseModel):

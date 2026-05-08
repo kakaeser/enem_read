@@ -69,14 +69,31 @@ class DashboardView:
     # ------------------------------------------------------------------
 
     async def load(self) -> None:
-        """Fetch results and statistics, then rebuild the table.
+        """Fetch results (present participants only) and statistics, then rebuild the table.
 
         Requirements: 5.1, 5.2, 5.3
         """
         try:
-            self._results = await self.api.get_exam_results(self.exam_id)
+            all_results = await self.api.get_exam_results(self.exam_id)
         except APIError:
-            self._results = []
+            all_results = []
+
+        # Filter to only present participants
+        try:
+            present_participants = await self.api.list_participants(
+                self.exam_id, presente=True
+            )
+            present_ids = {
+                p.get("id") or p.get("participant_id")
+                for p in present_participants
+            }
+            self._results = [
+                r for r in all_results
+                if (r.get("participant_id") or r.get("id")) in present_ids
+            ]
+        except APIError:
+            # If the filter call fails, fall back to showing all results
+            self._results = all_results
 
         try:
             self._statistics = await self.api.get_exam_statistics(self.exam_id)
@@ -137,6 +154,14 @@ class DashboardView:
             icon_color=self.theme.secondary,
         )
 
+        # ---- Copy ranking button --------------------------------------
+        copy_button = ft.IconButton(
+            icon=ft.Icons.COPY,
+            tooltip=t("copy_ranking"),
+            on_click=self._on_copy_ranking,
+            icon_color=self.theme.secondary,
+        )
+
         # ---- Header row -----------------------------------------------
         header_row = ft.Row(
             controls=[
@@ -146,14 +171,24 @@ class DashboardView:
                     weight=ft.FontWeight.BOLD,
                     color=self.theme.on_background,
                 ),
-                refresh_button,
+                ft.Row(
+                    controls=[copy_button, refresh_button],
+                    spacing=8,
+                ),
             ],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
         )
 
-        # ---- Scrollable table wrapper ---------------------------------
-        table_scroll = ft.Row(
-            controls=[self._data_table],
+        # ---- Scrollable table wrapper — vertical + horizontal ---------
+        # ft.DataTable grows horizontally; wrap in a Row for horizontal
+        # scroll, then put that inside a Column with scroll for vertical.
+        table_scroll = ft.Column(
+            controls=[
+                ft.Row(
+                    controls=[self._data_table],
+                    scroll=ft.ScrollMode.AUTO,
+                )
+            ],
             scroll=ft.ScrollMode.AUTO,
             expand=True,
         )
@@ -245,7 +280,7 @@ class DashboardView:
                 ),
                 bgcolor=self.theme.surface,
                 border_radius=8,
-                padding=ft.padding.symmetric(horizontal=16, vertical=10),
+                padding=ft.padding.Padding(16, 10, 16, 10),
             )
 
         return [
@@ -285,7 +320,12 @@ class DashboardView:
             participant_id: int = entry.get("participant_id") or entry.get("id") or 0
             name: str = entry.get("participant_name") or entry.get("nome") or str(participant_id)
             score = entry.get("final_score") or entry.get("score") or 0
-            accuracy = entry.get("accuracy_percent") or entry.get("accuracy") or 0
+            accuracy = (
+                entry.get("accuracy_percentage")
+                or entry.get("accuracy_percent")
+                or entry.get("accuracy")
+                or 0
+            )
 
             score_str = f"{score:.2f}" if isinstance(score, float) else str(score)
             accuracy_str = f"{accuracy:.1f}%" if isinstance(accuracy, (int, float)) else str(accuracy)
@@ -297,7 +337,7 @@ class DashboardView:
                     ft.DataCell(ft.Text(score_str, color=self.theme.on_background)),
                     ft.DataCell(ft.Text(accuracy_str, color=self.theme.on_background)),
                 ],
-                on_select_change=self._make_row_click_handler(
+                on_select_changed=self._make_row_click_handler(
                     participant_id=participant_id,
                     rank_position=rank,
                 ),
@@ -384,6 +424,39 @@ class DashboardView:
     # ------------------------------------------------------------------
     # Private helpers — event handlers
     # ------------------------------------------------------------------
+
+    def _on_copy_ranking(self, e: ft.ControlEvent) -> None:
+        """Copy the current ranking as plain text to the clipboard."""
+        if self._page is None:
+            return
+
+        lines = [f"{'Pos.':<5} {'Nome':<30} {'Nota':>8} {'Acertos %':>10}"]
+        lines.append("-" * 57)
+
+        sorted_results = sorted(
+            self._results,
+            key=lambda r: r.get("final_score") or r.get("score") or 0,
+            reverse=True,
+        )
+        for rank, entry in enumerate(sorted_results, start=1):
+            name = entry.get("participant_name") or entry.get("nome") or "?"
+            score = entry.get("final_score") or entry.get("score") or 0
+            accuracy = (
+                entry.get("accuracy_percentage")
+                or entry.get("accuracy_percent")
+                or entry.get("accuracy")
+                or 0
+            )
+            score_str = f"{score:.2f}" if isinstance(score, float) else str(score)
+            acc_str = f"{accuracy:.1f}%" if isinstance(accuracy, (int, float)) else str(accuracy)
+            lines.append(f"{rank:<5} {name:<30} {score_str:>8} {acc_str:>10}")
+
+        text = "\n".join(lines)
+        self._page.set_clipboard(text)
+        self._page.snack_bar = ft.SnackBar(
+            content=ft.Text(t("ranking_copied")), open=True
+        )
+        self._page.update()
 
     def _on_refresh_clicked(self, e: ft.ControlEvent) -> None:
         """Dispatch the async ``load()`` call from a sync click handler.

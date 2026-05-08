@@ -6,6 +6,9 @@ venv/
 .venv/
 .env
 *.db
+*.db-shm
+*.db-wal
+*.db.backup_*
 *.sqlite3
 
 

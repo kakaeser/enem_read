@@ -45,8 +45,13 @@ def get_response_repository(
 def get_exam_manager_service(
     exam_repo: AsyncExamRepository = Depends(get_exam_repository),
     participant_repo: AsyncParticipantRepository = Depends(get_participant_repository),
+    question_repo: AsyncQuestionRepository = Depends(get_question_repository),
 ) -> ExamManagerService:
-    return ExamManagerService(exam_repo=exam_repo, participant_repo=participant_repo)
+    return ExamManagerService(
+        exam_repo=exam_repo,
+        participant_repo=participant_repo,
+        question_repo=question_repo,
+    )
 
 
 def get_score_calculator_service(

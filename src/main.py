@@ -46,6 +46,7 @@ from frontend.desktop.views.dashboard import DashboardView
 from frontend.desktop.views.home import HomeView
 from frontend.desktop.views.language_select import LanguageSelectView
 from frontend.desktop.views.presence import PresenceView
+from frontend.desktop.views.answer_key import AnswerKeyView
 
 
 # ---------------------------------------------------------------------------
@@ -54,8 +55,8 @@ from frontend.desktop.views.presence import PresenceView
 
 def _mobile_dir() -> str:
     """Return the absolute path to src/frontend/mobile/."""
-    here = Path(__file__).resolve().parent          # src/frontend/desktop/
-    return str(here.parent / "mobile")              # src/frontend/mobile/
+    here = Path(__file__).resolve().parent          # src/
+    return str(here / "frontend" / "mobile")        # src/frontend/mobile/
 
 
 # ---------------------------------------------------------------------------
@@ -87,6 +88,7 @@ class App:
         # Workspace view references (kept for read-only transition)
         self._dashboard_view: Optional[DashboardView] = None
         self._presence_view: Optional[PresenceView] = None
+        self._answer_key_view: Optional[AnswerKeyView] = None
 
     # ------------------------------------------------------------------
     # Entry point
@@ -266,6 +268,7 @@ class App:
         )
 
         self.page.controls.clear()
+        self._attach_theme_button()
         self.page.add(home.build(page=self.page))
         self.page.update()
 
@@ -295,7 +298,7 @@ class App:
         try:
             exams = await self._api.list_exams()
             for e in exams:
-                if e.get("id") == exam_id:
+                if e.get("exam_id") == exam_id or e.get("id") == exam_id:
                     exam = e
                     break
         except APIError:
@@ -317,10 +320,18 @@ class App:
             theme=self._theme,
             read_only=read_only,
         )
+        self._answer_key_view = AnswerKeyView(
+            api=self._api,
+            exam_id=exam_id,
+            theme=self._theme,
+            read_only=read_only,
+            on_import=self._dashboard_view.load,
+        )
 
         # Build the workspace layout and show it
         workspace = self._build_workspace_layout(exam, read_only)
         self.page.controls.clear()
+        self._attach_theme_button()
         self.page.add(workspace)
         self.page.update()
 
@@ -328,6 +339,7 @@ class App:
         await asyncio.gather(
             self._dashboard_view.load(),
             self._presence_view.load(),
+            self._answer_key_view.load(),
         )
 
     def _build_workspace_layout(self, exam: dict, read_only: bool) -> ft.Control:
@@ -340,6 +352,7 @@ class App:
         """
         assert self._dashboard_view is not None
         assert self._presence_view is not None
+        assert self._answer_key_view is not None
 
         exam_name: str = (
             exam.get("exam_name") or exam.get("name") or f"Exam #{exam.get('id', '')}"
@@ -348,6 +361,7 @@ class App:
         # ---- Tab content (built once; toggled via visibility) --------
         dashboard_content = self._dashboard_view.build(page=self.page)
         presence_content = self._presence_view.build(page=self.page)
+        answer_key_content = self._answer_key_view.build(page=self.page)
 
         # Wrap each tab in a Container so we can toggle visibility
         dashboard_container = ft.Container(
@@ -360,27 +374,46 @@ class App:
             expand=True,
             visible=False,
         )
+        answer_key_container = ft.Container(
+            content=answer_key_content,
+            expand=True,
+            visible=False,
+        )
 
         # ---- Tab buttons ---------------------------------------------
         tab_dashboard = ft.TextButton(
             text=t("dashboard"),
             style=ft.ButtonStyle(color=self._theme.primary),
             on_click=lambda _: self._switch_tab(
-                dashboard_container, presence_container,
-                tab_dashboard, tab_presence,
+                dashboard_container,
+                [presence_container, answer_key_container],
+                tab_dashboard,
+                [tab_presence, tab_answer_key],
             ),
         )
         tab_presence = ft.TextButton(
             text=t("presence"),
             style=ft.ButtonStyle(color=self._theme.on_background),
             on_click=lambda _: self._switch_tab(
-                presence_container, dashboard_container,
-                tab_presence, tab_dashboard,
+                presence_container,
+                [dashboard_container, answer_key_container],
+                tab_presence,
+                [tab_dashboard, tab_answer_key],
+            ),
+        )
+        tab_answer_key = ft.TextButton(
+            text=t("answer_key"),
+            style=ft.ButtonStyle(color=self._theme.on_background),
+            on_click=lambda _: self._switch_tab(
+                answer_key_container,
+                [dashboard_container, presence_container],
+                tab_answer_key,
+                [tab_dashboard, tab_presence],
             ),
         )
 
         tab_bar = ft.Row(
-            controls=[tab_dashboard, tab_presence],
+            controls=[tab_dashboard, tab_presence, tab_answer_key],
             spacing=4,
         )
 
@@ -475,7 +508,7 @@ class App:
             # Requirement 8.1–8.4 — show EndExamButton
             assert self._api is not None
             status_bar = EndExamButton(
-                exam_id=exam.get("id", self._current_exam_id or 0),
+                exam_id=exam.get("exam_id") or exam.get("id", self._current_exam_id or 0),
                 api=self._api,
                 theme=self._theme,
                 on_exam_ended=self._on_exam_ended,
@@ -496,7 +529,11 @@ class App:
                 ft.Container(
                     expand=True,
                     content=ft.Stack(
-                        controls=[dashboard_container, presence_container],
+                        controls=[
+                            dashboard_container,
+                            presence_container,
+                            answer_key_container,
+                        ],
                         expand=True,
                     ),
                 ),
@@ -508,15 +545,17 @@ class App:
     def _switch_tab(
         self,
         show: ft.Container,
-        hide: ft.Container,
+        hide: list[ft.Container],
         active_btn: ft.TextButton,
-        inactive_btn: ft.TextButton,
+        inactive_btns: list[ft.TextButton],
     ) -> None:
-        """Toggle visibility between two tab containers and update button styles."""
+        """Toggle visibility between tab containers and update button styles."""
         show.visible = True
-        hide.visible = False
+        for h in hide:
+            h.visible = False
         active_btn.style = ft.ButtonStyle(color=self._theme.primary)
-        inactive_btn.style = ft.ButtonStyle(color=self._theme.on_background)
+        for btn in inactive_btns:
+            btn.style = ft.ButtonStyle(color=self._theme.on_background)
         self.page.update()
 
     # ------------------------------------------------------------------
@@ -532,6 +571,73 @@ class App:
             self.page.run_task(
                 self._build_exam_workspace, self._current_exam_id
             )
+
+    # ------------------------------------------------------------------
+    # Theme picker
+    # ------------------------------------------------------------------
+
+    def _attach_theme_button(self) -> None:
+        """Attach a floating theme-picker button to the bottom-right corner."""
+        self.page.floating_action_button = ft.FloatingActionButton(
+            icon=ft.Icons.PALETTE,
+            tooltip=t("theme"),
+            bgcolor=self._theme.primary,
+            foreground_color=self._theme.on_primary,
+            on_click=self._show_theme_picker,
+        )
+        self.page.floating_action_button_location = (
+            ft.FloatingActionButtonLocation.END_FLOAT
+        )
+
+    def _show_theme_picker(self, e: ft.ControlEvent) -> None:
+        """Open a dialog to pick a theme."""
+        theme_labels = {
+            "dark_blue":    "🌑 Dark Blue",
+            "dark_green":   "🌿 Dark Green",
+            "light":        "☀️  Light",
+            "light_purple": "💜 Light Purple",
+            "high_contrast":"⚡ High Contrast",
+        }
+
+        def pick(theme_name: str) -> None:
+            dialog.open = False
+            self.page.update()
+            self._theme = THEMES[theme_name]
+            self._config["theme"] = theme_name
+            save_config(self._config)
+            # Rebuild current view with new theme
+            if self._current_exam_id is not None:
+                self.page.run_task(self._build_exam_workspace, self._current_exam_id)
+            else:
+                self._show_home()
+
+        dialog = ft.AlertDialog(
+            title=ft.Text(t("theme")),
+            content=ft.Column(
+                controls=[
+                    ft.TextButton(
+                        text=label,
+                        on_click=lambda _, n=name: pick(n),
+                        style=ft.ButtonStyle(
+                            color=THEMES[name].primary,
+                        ),
+                    )
+                    for name, label in theme_labels.items()
+                ],
+                tight=True,
+                spacing=4,
+            ),
+            actions=[
+                ft.TextButton(text=t("cancel"), on_click=lambda _: self._close_dialog(dialog)),
+            ],
+        )
+        self.page.dialog = dialog
+        dialog.open = True
+        self.page.update()
+
+    def _close_dialog(self, dialog: ft.AlertDialog) -> None:
+        dialog.open = False
+        self.page.update()
 
     # ------------------------------------------------------------------
     # Cleanup

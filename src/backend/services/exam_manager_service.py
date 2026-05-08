@@ -3,8 +3,10 @@ from datetime import datetime
 
 from backend.entities.exam import Exam
 from backend.entities.participante import Participante
+from backend.entities.questao import Questao
 from backend.repositories.interfaces.exam_interface import IExamRepository
 from backend.repositories.interfaces.participant_interface import IParticipantRepository
+from backend.repositories.interfaces.question_interface import IQuestionRepository
 from backend.schemas.exam import ExamCreate, ExamUpdate, ExamResponse
 from backend.schemas.participante import ParticipantCreate, ParticipantResponse
 
@@ -16,12 +18,14 @@ class ExamManagerService:
         self,
         exam_repo: IExamRepository,
         participant_repo: IParticipantRepository,
+        question_repo: Optional[IQuestionRepository] = None,
     ):
         self.exam_repo = exam_repo
         self.participant_repo = participant_repo
+        self.question_repo = question_repo
 
     async def create_exam(self, exam_data: ExamCreate) -> ExamResponse:
-        """Create a new exam session. Requirements: 1.1, 1.2, 1.3"""
+        """Create a new exam session and pre-create Question rows with weights."""
         exam = Exam(
             exam_name=exam_data.exam_name,
             questions_numbers=exam_data.questions_numbers,
@@ -31,6 +35,23 @@ class ExamManagerService:
             status="draft",
         )
         created = await self.exam_repo.create(exam)
+
+        # Pre-create question rows with weights so the answer key can be set later
+        if self.question_repo is not None:
+            n = exam_data.questions_numbers
+            weights = _compute_weights(n, exam_data.weight_mode, exam_data.heavy_questions)
+
+            questions = [
+                Questao(
+                    exam_id=created.exam_id,
+                    numero=i + 1,
+                    peso=weights[i],
+                    question_correct_answer=None,
+                )
+                for i in range(n)
+            ]
+            await self.question_repo.create_bulk(questions)
+
         return ExamResponse.model_validate(created)
 
     async def get_exam(self, exam_id: int) -> ExamResponse:
@@ -102,3 +123,32 @@ class ExamManagerService:
         )
         created = await self.participant_repo.create(participant)
         return ParticipantResponse.model_validate(created)
+
+
+# ---------------------------------------------------------------------------
+# Weight computation helper
+# ---------------------------------------------------------------------------
+
+def _compute_weights(
+    n: int,
+    weight_mode: str,
+    heavy_questions: list[int] | None,
+) -> list[int]:
+    """
+    Return a list of `n` peso values (1 or 2) based on weight_mode.
+
+    Modes:
+      "default"        — all 1
+      "even_questions" — even-numbered questions (2,4,6…) get 2, others 1
+      "odd_questions"  — odd-numbered questions (1,3,5…) get 2, others 1
+      "custom"         — questions in heavy_questions get 2, others 1
+    """
+    if weight_mode == "even_questions":
+        return [2 if (i + 1) % 2 == 0 else 1 for i in range(n)]
+    if weight_mode == "odd_questions":
+        return [2 if (i + 1) % 2 != 0 else 1 for i in range(n)]
+    if weight_mode == "custom" and heavy_questions:
+        heavy_set = set(heavy_questions)
+        return [2 if (i + 1) in heavy_set else 1 for i in range(n)]
+    # default
+    return [1] * n

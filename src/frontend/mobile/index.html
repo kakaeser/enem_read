@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title data-i18n="page_title">Enem da Read — Enviar Gabarito</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50:  '#eff6ff',
+              100: '#dbeafe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Smooth transitions for language toggle */
+    [data-i18n] { transition: opacity 0.15s ease; }
+
+    /* Custom file input styling */
+    #file-input::file-selector-button {
+      display: none;
+    }
+
+    /* Preview image max height */
+    #preview-img {
+      max-height: 280px;
+      object-fit: contain;
+    }
+
+    /* Spinner animation */
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .spinner {
+      animation: spin 0.8s linear infinite;
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-gray-50 flex flex-col items-center py-8 px-4">
+
+  <!-- ===== Header ===== -->
+  <header class="w-full max-w-md flex items-center justify-between mb-6">
+    <h1 class="text-xl font-bold text-gray-800" data-i18n="app_title">Enem da Read</h1>
+
+    <!-- Language toggle -->
+    <div class="flex items-center gap-2">
+      <button
+        id="btn-lang-pt"
+        onclick="setLanguage('pt_BR')"
+        aria-label="Português (BR)"
+        class="text-2xl leading-none focus:outline-none focus:ring-2 focus:ring-brand-500 rounded transition-opacity"
+        title="Português (BR)"
+      >🇧🇷</button>
+      <button
+        id="btn-lang-en"
+        onclick="setLanguage('en')"
+        aria-label="English"
+        class="text-2xl leading-none focus:outline-none focus:ring-2 focus:ring-brand-500 rounded transition-opacity"
+        title="English"
+      >🇺🇸</button>
+    </div>
+  </header>
+
+  <!-- ===== Card ===== -->
+  <main class="w-full max-w-md bg-white rounded-2xl shadow-md p-6 space-y-5">
+
+    <h2 class="text-lg font-semibold text-gray-700" data-i18n="upload_answer_sheet">
+      Enviar Gabarito
+    </h2>
+
+    <!-- Exam selector -->
+    <div class="space-y-1">
+      <label for="exam-select" class="block text-sm font-medium text-gray-600" data-i18n="select_exam">
+        Selecione a Prova
+      </label>
+      <select
+        id="exam-select"
+        onchange="loadPresentParticipants(this.value)"
+        class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50"
+        aria-label="Selecione a Prova"
+      >
+        <option value="" data-i18n="select_exam_placeholder">— selecione —</option>
+      </select>
+    </div>
+
+    <!-- Participant selector -->
+    <div class="space-y-1">
+      <label for="participant-select" class="block text-sm font-medium text-gray-600" data-i18n="select_participant">
+        Selecione o Participante
+      </label>
+      <select
+        id="participant-select"
+        disabled
+        class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50"
+        aria-label="Selecione o Participante"
+      >
+        <option value="" data-i18n="select_participant_placeholder">— selecione —</option>
+      </select>
+    </div>
+
+    <!-- Mode toggle: Photo vs Manual -->
+    <div class="flex rounded-lg overflow-hidden border border-gray-300">
+      <button
+        id="btn-mode-photo"
+        onclick="setMode('photo')"
+        class="flex-1 py-2 text-sm font-medium bg-brand-600 text-white transition-colors"
+        data-i18n="photo_mode"
+      >Foto</button>
+      <button
+        id="btn-mode-manual"
+        onclick="setMode('manual')"
+        class="flex-1 py-2 text-sm font-medium bg-white text-gray-600 transition-colors"
+        data-i18n="manual_mode"
+      >Manual</button>
+    </div>
+
+    <!-- ===== PHOTO MODE ===== -->
+    <div id="photo-section">
+
+    <!-- File input -->
+    <div class="space-y-1">
+      <label class="block text-sm font-medium text-gray-600" data-i18n="select_image">
+        Selecionar Imagem
+      </label>
+
+      <!-- Custom file button -->
+      <label
+        for="file-input"
+        class="flex items-center justify-center gap-2 w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-3 cursor-pointer hover:border-brand-500 hover:bg-brand-50 transition-colors"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+        </svg>
+        <span id="file-label" class="text-sm text-gray-500" data-i18n="choose_file">Escolher arquivo</span>
+      </label>
+      <input
+        id="file-input"
+        type="file"
+        accept="image/jpeg,image/png"
+        onchange="previewImage(this)"
+        class="sr-only"
+        aria-label="Selecionar imagem JPEG ou PNG"
+      />
+    </div>
+
+    <!-- Image preview -->
+    <div id="preview-container" class="hidden">
+      <img
+        id="preview-img"
+        src=""
+        alt=""
+        class="w-full rounded-lg border border-gray-200 shadow-sm"
+      />
+    </div>
+
+    </div><!-- end photo-section -->
+
+    <!-- ===== MANUAL MODE ===== -->
+    <div id="manual-section" class="hidden space-y-3">
+      <p class="text-sm text-gray-500" data-i18n="manual_answers">Inserir Respostas Manualmente</p>
+      <div id="manual-grid" class="grid grid-cols-5 gap-2">
+        <!-- Populated by JS when exam is selected -->
+      </div>
+    </div>
+
+    <!-- Validation error -->
+    <p
+      id="file-error"
+      role="alert"
+      class="hidden text-sm text-red-600 font-medium"
+    ></p>
+
+    <!-- Submit button -->
+    <button
+      id="submit-btn"
+      onclick="submitForm()"
+      class="w-full flex items-center justify-center gap-2 rounded-lg bg-brand-600 px-4 py-3 text-sm font-semibold text-white hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      data-i18n="submit"
+    >
+      Enviar
+    </button>
+
+    <!-- Spinner (hidden by default) -->
+    <div id="spinner" class="hidden flex justify-center">
+      <svg class="spinner h-6 w-6 text-brand-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor"
+          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+      </svg>
+    </div>
+
+    <!-- Result area -->
+    <div
+      id="result-area"
+      role="status"
+      aria-live="polite"
+      class="hidden rounded-lg p-4 text-sm"
+    ></div>
+
+  </main>
+
+  <!-- ===== Footer ===== -->
+  <footer class="mt-6 text-xs text-gray-400" data-i18n="footer_hint">
+    JPEG ou PNG · máx. 5 MB
+  </footer>
+
+  <!-- Upload logic (STRINGS, i18n, submitForm, etc.) -->
+  <script>
+    // API base URL injected by the mobile server at serve time.
+    // Falls back to same-host port 8000 if placeholder was not replaced.
+    var API_BASE = '__API_BASE__';
+    if (!API_BASE || API_BASE === '__API_BASE__') {
+      API_BASE = 'http://' + window.location.hostname + ':8000';
+    }
+  </script>
+  <script src="static/upload.js"></script>
+
+</body>
+</html>

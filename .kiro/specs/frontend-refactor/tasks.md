@@ -147,18 +147,18 @@ Implement the Flet desktop app, mobile HTML upload page, and minimal backend add
     - `page.on_disconnect`: call `launcher.stop()` and `mobile_server.stop()`
     - _Requirements: 1.1, 1.2, 1.3, 2.1, 2.2, 11.1, 11.2, 11.3_
 
-- [ ] 21. Mobile — HTML upload page
-  - [ ] 21.1 Create `src/frontend/mobile/index.html` with Tailwind CSS upload page
+- [x] 21. Mobile — HTML upload page
+  - [x] 21.1 Create `src/frontend/mobile/index.html` with Tailwind CSS upload page
     - Exam `<select>` populated via `GET /api/v1/exams` on load; participant `<select>` populated via `?presente=true` on exam change
     - File input with live image preview; client-side validation (5 MB limit, JPEG/PNG only)
     - Inline i18n via `data-i18n` attributes and `STRINGS` object (pt_BR + en); language flag toggle; `localStorage` persistence
     - Submit button re-enabled after completion; result shown inline
     - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.5, 12.6, 12.7, 13.1, 13.2, 13.3_
-  - [ ] 21.2 Create `src/frontend/mobile/static/upload.js` with fetch-based form submission logic
+  - [x] 21.2 Create `src/frontend/mobile/static/upload.js` with fetch-based form submission logic
     - `submitForm()`, `loadPresentParticipants(examId)`, `previewImage(input)`, `setLanguage(lang)`, `applyTranslations()`
     - _Requirements: 12.4, 13.2_
 
-- [ ] 22. Final checkpoint — Ensure all tests pass
+- [x] 22. Final checkpoint — Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes

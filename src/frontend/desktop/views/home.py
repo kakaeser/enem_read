@@ -9,6 +9,7 @@ Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6
 
 from __future__ import annotations
 
+import asyncio
 from typing import Callable, Optional
 
 import flet as ft
@@ -51,6 +52,9 @@ class HomeView:
         self._name_field: Optional[ft.TextField] = None
         self._questions_field: Optional[ft.TextField] = None
         self._note_field: Optional[ft.TextField] = None
+        self._weight_mode_group: Optional[ft.RadioGroup] = None
+        self._custom_weights_field: Optional[ft.TextField] = None
+        self._custom_weights_row: Optional[ft.Container] = None
         self._create_button: Optional[ft.ElevatedButton] = None
 
         # --- Section B: exam list (populated in build() / load()) ---
@@ -124,6 +128,52 @@ class HomeView:
             color=self.theme.on_primary,
         )
 
+        # ---- Weight mode selector ------------------------------------
+        def on_weight_mode_change(e: ft.ControlEvent) -> None:
+            if self._custom_weights_row is not None:
+                self._custom_weights_row.visible = (e.control.value == "custom")
+                if self._page is not None:
+                    try:
+                        self._page.update()
+                    except Exception:
+                        pass
+
+        self._weight_mode_group = ft.RadioGroup(
+            value="default",
+            on_change=on_weight_mode_change,
+            content=ft.Column(
+                controls=[
+                    ft.Radio(value="default",        label=t("weight_default")),
+                    ft.Radio(value="even_questions",  label=t("weight_even_questions")),
+                    ft.Radio(value="odd_questions",   label=t("weight_odd_questions")),
+                    ft.Radio(value="custom",          label=t("weight_custom")),
+                ],
+                spacing=4,
+            ),
+        )
+
+        self._custom_weights_field = ft.TextField(
+            label=t("weight_custom_hint"),
+            hint_text='ex: 1, 5, 10-15',
+            expand=True,
+        )
+        self._custom_weights_row = ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Text(
+                        t("weight_custom_desc"),
+                        size=11,
+                        color=self.theme.on_background,
+                        opacity=0.6,
+                        italic=True,
+                    ),
+                    self._custom_weights_field,
+                ],
+                spacing=4,
+            ),
+            visible=False,
+        )
+
         section_a = ft.Container(
             expand=True,
             bgcolor=self.theme.surface,
@@ -141,6 +191,14 @@ class HomeView:
                     self._name_field,
                     self._questions_field,
                     self._note_field,
+                    ft.Text(
+                        t("weight_mode"),
+                        size=13,
+                        color=self.theme.on_background,
+                        opacity=0.8,
+                    ),
+                    self._weight_mode_group,
+                    self._custom_weights_row,
                     ft.Row(
                         controls=[self._create_button],
                         alignment=ft.MainAxisAlignment.END,
@@ -251,7 +309,7 @@ class HomeView:
             return
 
         for exam in self._exams:
-            exam_id: int = exam.get("id", 0)
+            exam_id: int = exam.get("exam_id") or exam.get("id", 0)
             name: str = (
                 exam.get("exam_name")
                 or exam.get("name")
@@ -293,7 +351,7 @@ class HomeView:
                         ),
                         bgcolor=self.theme.secondary,
                         border_radius=4,
-                        padding=ft.Padding.symmetric(horizontal=8, vertical=2),
+                        padding=ft.padding.symmetric(horizontal=8, vertical=2),
                     )
                 )
 
@@ -322,14 +380,30 @@ class HomeView:
 
             row = ft.Container(
                 content=ft.Row(
-                    controls=row_controls,
-                    spacing=8,
-                    alignment=ft.MainAxisAlignment.START,
+                    controls=[
+                        ft.Container(
+                            content=ft.Row(
+                                controls=row_controls,
+                                spacing=8,
+                                alignment=ft.MainAxisAlignment.START,
+                                expand=True,
+                            ),
+                            expand=True,
+                            on_click=self._make_open_handler(exam_id),
+                            ink=True,
+                        ),
+                        ft.IconButton(
+                            icon=ft.Icons.DELETE_OUTLINE,
+                            icon_color="#EF5350",
+                            tooltip=t("delete_exam"),
+                            on_click=self._make_delete_exam_handler(exam_id, name),
+                        ),
+                    ],
+                    spacing=0,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 ),
-                padding=ft.Padding.symmetric(horizontal=12, vertical=10),
+                padding=ft.padding.symmetric(horizontal=4, vertical=4),
                 border_radius=6,
-                ink=True,
-                on_click=self._make_open_handler(exam_id),
                 bgcolor=self.theme.background,
             )
 
@@ -345,6 +419,64 @@ class HomeView:
             self.on_exam_ready(exam_id)
 
         return handler
+
+    def _make_delete_exam_handler(self, exam_id: int, name: str) -> Callable:
+        """Return a click handler that confirms and deletes an exam."""
+
+        def handler(e: ft.ControlEvent) -> None:
+            if self._page is not None:
+                self._page.run_task(self._confirm_delete_exam, exam_id, name)
+
+        return handler
+
+    async def _confirm_delete_exam(self, exam_id: int, name: str) -> None:
+        """Show a confirmation dialog then delete the exam."""
+        if self._page is None:
+            return
+
+        confirmed: asyncio.Future[bool] = asyncio.get_event_loop().create_future()
+
+        def on_confirm(_: ft.ControlEvent) -> None:
+            dialog.open = False
+            self._page.update()
+            if not confirmed.done():
+                confirmed.set_result(True)
+
+        def on_cancel(_: ft.ControlEvent) -> None:
+            dialog.open = False
+            self._page.update()
+            if not confirmed.done():
+                confirmed.set_result(False)
+
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text(t("delete_exam")),
+            content=ft.Text(f'"{name}" — {t("delete_confirm")}'),
+            actions=[
+                ft.TextButton(text=t("cancel"), on_click=on_cancel),
+                ft.TextButton(
+                    text=t("delete"),
+                    style=ft.ButtonStyle(color="#EF5350"),
+                    on_click=on_confirm,
+                ),
+            ],
+        )
+        self._page.dialog = dialog
+        dialog.open = True
+        self._page.update()
+
+        if not await confirmed:
+            return
+
+        try:
+            await self.api.delete_exam(exam_id)
+            await self.load()
+        except APIError as err:
+            if self._page is not None:
+                self._page.snack_bar = ft.SnackBar(
+                    content=ft.Text(err.message), open=True
+                )
+                self._page.update()
 
     # ------------------------------------------------------------------
     # Private helpers — form
@@ -415,6 +547,17 @@ class HomeView:
         questions = int((self._questions_field.value or "").strip())
         note = int((self._note_field.value or "").strip())
 
+        # Parse weight mode
+        weight_mode = "default"
+        heavy_questions: list[int] | None = None
+        if self._weight_mode_group is not None:
+            weight_mode = self._weight_mode_group.value or "default"
+        if weight_mode == "custom" and self._custom_weights_field is not None:
+            raw = (self._custom_weights_field.value or "").strip()
+            heavy_questions = _parse_question_numbers(raw, questions)
+            if not heavy_questions:
+                weight_mode = "default"
+
         # Disable button while the request is in flight
         if self._create_button is not None:
             self._create_button.disabled = True
@@ -429,8 +572,10 @@ class HomeView:
                 name=name,
                 questions_numbers=questions,
                 symbolic_note=note,
+                weight_mode=weight_mode,
+                heavy_questions=heavy_questions,
             )
-            exam_id: int = new_exam.get("id", 0)
+            exam_id: int = new_exam.get("exam_id") or new_exam.get("id", 0)
             self.on_exam_ready(exam_id)
         except APIError as err:
             if self._page is not None:
@@ -462,3 +607,40 @@ def _is_positive_int(value: str) -> bool:
         return int(value) > 0
     except (ValueError, TypeError):
         return False
+
+
+def _parse_question_numbers(raw: str, max_q: int) -> list[int]:
+    """
+    Parse a string like "1, 5, 10-15" into a sorted list of question numbers.
+
+    Supports:
+      - Single numbers: "1, 5, 10"
+      - Ranges:         "10-15"  → [10, 11, 12, 13, 14, 15]
+      - Mixed:          "1, 5, 10-15"
+
+    Numbers outside [1, max_q] are silently ignored.
+    Returns an empty list if nothing valid is found.
+    """
+    result: set[int] = set()
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            # Range like "10-15"
+            bounds = part.split("-", 1)
+            try:
+                lo, hi = int(bounds[0].strip()), int(bounds[1].strip())
+                for n in range(lo, hi + 1):
+                    if 1 <= n <= max_q:
+                        result.add(n)
+            except (ValueError, IndexError):
+                pass
+        else:
+            try:
+                n = int(part)
+                if 1 <= n <= max_q:
+                    result.add(n)
+            except ValueError:
+                pass
+    return sorted(result)

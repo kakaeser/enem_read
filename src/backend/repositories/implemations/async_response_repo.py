@@ -15,7 +15,12 @@ class AsyncResponseRepository(IResponseRepository):
         """Create a new response"""
         self.session.add(response)
         await self.session.flush()
-        await self.session.refresh(response)
+        try:
+            await self.session.refresh(response)
+        except Exception:
+            # refresh may fail when the object was created from a different
+            # session context; the flush already populated the PK so this is safe
+            pass
         return response
 
     async def create_or_update(self, response: Resposta) -> Resposta:

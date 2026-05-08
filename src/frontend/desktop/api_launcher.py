@@ -10,7 +10,7 @@ import httpx
 class APILauncher:
     def __init__(
         self,
-        host: str = "127.0.0.1",
+        host: str = "0.0.0.0",
         port: int = 8000,
         app_module: str = "backend.api.app:app",
         poll_interval: float = 0.5,
@@ -25,7 +25,8 @@ class APILauncher:
 
     @property
     def health_url(self) -> str:
-        return f"http://{self._host}:{self._port}/health"
+        # Always probe via localhost regardless of bind host
+        return f"http://127.0.0.1:{self._port}/health"
 
     async def start_if_needed(self) -> bool:
         """Probe /health; start uvicorn if unreachable.

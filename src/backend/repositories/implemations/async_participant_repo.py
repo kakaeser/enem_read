@@ -79,11 +79,17 @@ class AsyncParticipantRepository(IParticipantRepository):
         return participant
 
     async def delete(self, participant_id: int) -> bool:
-        """Delete a participant by ID"""
-        result = await self.session.execute(
-            delete(Participante).where(Participante.id == participant_id)
-        )
-        return result.rowcount > 0
+        """Delete a participant by ID.
+
+        Uses ORM-style delete so SQLAlchemy's cascade='all, delete-orphan'
+        fires and removes all related Resposta rows for this participant.
+        """
+        participant = await self.get_by_id(participant_id)
+        if participant is None:
+            return False
+        await self.session.delete(participant)
+        await self.session.flush()
+        return True
 
     async def delete_by_exam_id(self, exam_id: int) -> bool:
         """Delete all participants for a specific exam"""

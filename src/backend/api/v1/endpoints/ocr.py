@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from typing import Dict
 
 from backend.api.dependencies import (
     get_exam_repository,
@@ -7,11 +8,14 @@ from backend.api.dependencies import (
     get_response_repository,
 )
 from backend.core.exceptions import NotFoundException, OCRProcessingException
+from backend.entities.questao import Questao
+from backend.entities.resposta import Resposta
 from backend.repositories.implemations.async_exam_repo import AsyncExamRepository
 from backend.repositories.implemations.async_question_repo import AsyncQuestionRepository
 from backend.repositories.implemations.async_response_repo import AsyncResponseRepository
 from backend.schemas.ocr import AnswerKeyResult, AnswerSheetResult
 from backend.services.ocr.ocr_service import OCRService
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/exams", tags=["ocr"])
 
@@ -85,6 +89,12 @@ async def process_answer_key(
             detail=str(exc),
         )
 
+    if not result.success:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=result.error_message or "OCR could not extract any answers from the image.",
+        )
+
     return result
 
 
@@ -138,4 +148,136 @@ async def process_answer_sheet(
             detail=str(exc),
         )
 
+    if not result.success:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=result.error_message or "OCR could not extract any answers from the image.",
+        )
+
     return result
+
+
+# ---------------------------------------------------------------------------
+# Manual answer key entry (no OCR)
+# ---------------------------------------------------------------------------
+
+class ManualAnswerKeyRequest(BaseModel):
+    """JSON body: {answers: {"1": "A", "2": "B", ...}, weights: {"1": 2, "2": 1, ...}}"""
+    answers: Dict[str, str]          # question_number (str) → letter
+    weights: Dict[str, int] = {}     # question_number (str) → peso (optional)
+
+
+@router.post(
+    "/{exam_id}/answer-key/manual",
+    status_code=status.HTTP_200_OK,
+    summary="Set answer key manually (no OCR)",
+)
+async def set_answer_key_manual(
+    exam_id: int,
+    body: ManualAnswerKeyRequest,
+    exam_repo: AsyncExamRepository = Depends(get_exam_repository),
+    question_repo: AsyncQuestionRepository = Depends(get_question_repository),
+):
+    """
+    Directly set correct answers for an exam without OCR.
+    Accepts {answers: {"1": "A", "2": "B"}, weights: {"1": 2}}.
+    Creates or updates Question records.
+    """
+    exam = await exam_repo.get_by_id(exam_id)
+    if exam is None:
+        raise HTTPException(status_code=404, detail=f"Exam {exam_id} not found")
+
+    existing = await question_repo.get_by_exam_id(exam_id)
+    existing_map = {q.numero: q for q in existing}
+
+    to_create = []
+    for q_str, answer in body.answers.items():
+        try:
+            q_num = int(q_str)
+        except ValueError:
+            continue
+        answer = answer.strip().upper()
+        if not answer:
+            continue
+        peso = int(body.weights.get(q_str, body.weights.get(str(q_num), 1)))
+        if q_num in existing_map:
+            q = existing_map[q_num]
+            q.question_correct_answer = answer
+            q.peso = peso
+            await question_repo.update(q)
+        else:
+            to_create.append(Questao(
+                exam_id=exam_id,
+                numero=q_num,
+                peso=peso,
+                question_correct_answer=answer,
+            ))
+
+    if to_create:
+        await question_repo.create_bulk(to_create)
+
+    return {"saved": len(body.answers)}
+
+
+# ---------------------------------------------------------------------------
+# Manual answer sheet entry (no OCR)
+# ---------------------------------------------------------------------------
+
+class ManualAnswerSheetRequest(BaseModel):
+    """JSON body: {answers: {"1": "A", "2": "B", ...}}"""
+    answers: Dict[str, str]
+
+
+@router.post(
+    "/{exam_id}/participants/{participant_id}/manual-answers",
+    status_code=status.HTTP_200_OK,
+    summary="Submit participant answers manually (no OCR)",
+)
+async def submit_manual_answers(
+    exam_id: int,
+    participant_id: int,
+    body: ManualAnswerSheetRequest,
+    exam_repo: AsyncExamRepository = Depends(get_exam_repository),
+    question_repo: AsyncQuestionRepository = Depends(get_question_repository),
+    response_repo: AsyncResponseRepository = Depends(get_response_repository),
+):
+    """
+    Directly record a participant's answers without OCR.
+    Accepts {answers: {"1": "A", "2": "B"}}.
+    Creates or updates Resposta records.
+    """
+    exam = await exam_repo.get_by_id(exam_id)
+    if exam is None:
+        raise HTTPException(status_code=404, detail=f"Exam {exam_id} not found")
+
+    questions = await question_repo.get_by_exam_id(exam_id)
+    question_map = {q.numero: q for q in questions}
+
+    if not question_map:
+        raise HTTPException(
+            status_code=422,
+            detail=f"No questions found for exam {exam_id}. Import the answer key first.",
+        )
+
+    saved = 0
+    for q_str, answer in body.answers.items():
+        try:
+            q_num = int(q_str)
+        except ValueError:
+            continue
+        answer = answer.strip().upper()
+        if not answer or q_num not in question_map:
+            continue
+        q = question_map[q_num]
+        resp = Resposta(
+            user_id=participant_id,
+            quest_id=q.id,
+            exam_id=exam_id,
+            marked_answer=answer,
+            confidence_score=100.0,
+            manually_reviewed=True,
+        )
+        await response_repo.create_or_update(resp)
+        saved += 1
+
+    return {"saved": saved}

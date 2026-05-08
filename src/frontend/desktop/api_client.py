@@ -66,17 +66,86 @@ class APIClient:
         return response.json() or {}
 
     async def create_exam(
-        self, name: str, questions_numbers: int, symbolic_note: int
+        self, name: str, questions_numbers: int, symbolic_note: int,
+        weight_mode: str = "default", heavy_questions: list[int] | None = None,
     ) -> dict:
         """POST /exams — creates a new exam and returns ExamResponse dict."""
-        payload = {
+        payload: dict = {
             "exam_name": name,
             "questions_numbers": questions_numbers,
             "symbolic_note": symbolic_note,
+            "weight_mode": weight_mode,
         }
+        if heavy_questions:
+            payload["heavy_questions"] = heavy_questions
         response = await self._client.post("/exams/", json=payload)
         _raise_for_status(response)
         return response.json() or {}
+
+    async def delete_exam(self, exam_id: int) -> None:
+        """DELETE /exams/{exam_id} — deletes an exam and all associated data."""
+        response = await self._client.delete(f"/exams/{exam_id}")
+        _raise_for_status(response)
+
+    async def set_answer_key_manual(
+        self, exam_id: int, answers: dict[str, str], weights: dict[str, int] | None = None
+    ) -> dict:
+        """POST /exams/{exam_id}/answer-key/manual — set answers directly without OCR."""
+        payload: dict = {"answers": answers}
+        if weights:
+            payload["weights"] = weights
+        response = await self._client.post(f"/exams/{exam_id}/answer-key/manual", json=payload)
+        _raise_for_status(response)
+        return response.json() or {}
+
+    async def get_answer_key(self, exam_id: int) -> list[dict]:
+        """
+        Return the answer key for an exam as a list of
+        {numero, question_correct_answer, peso} dicts.
+
+        Reuses GET /exams/{exam_id}/participants/{participant_id}/responses
+        from the first available participant.  If no participant has responses
+        yet, falls back to building a skeleton from the exam's questions_numbers
+        field so the editor still shows all rows.
+        """
+        # Try to get a real participant with responses
+        try:
+            participants = await self.list_participants(exam_id)
+            for p in participants:
+                pid = p.get("id") or p.get("participant_id")
+                if pid is None:
+                    continue
+                responses = await self.get_participant_responses(exam_id, pid)
+                if responses:
+                    # Responses already contain correct_answer + peso per question
+                    return [
+                        {
+                            "numero": r.get("question_number") or r.get("numero"),
+                            "question_correct_answer": r.get("correct_answer"),
+                            "peso": r.get("peso") or r.get("weight") or 1,
+                        }
+                        for r in responses
+                    ]
+        except APIError:
+            pass
+
+        # No responses yet — build skeleton from exam metadata
+        try:
+            exams = await self.list_exams()
+            exam = next(
+                (e for e in exams if e.get("exam_id") == exam_id or e.get("id") == exam_id),
+                None,
+            )
+            if exam:
+                total: int = exam.get("questions_numbers") or 0
+                return [
+                    {"numero": n, "question_correct_answer": None, "peso": 1}
+                    for n in range(1, total + 1)
+                ]
+        except APIError:
+            pass
+
+        return []
 
     async def finish_exam(self, exam_id: int) -> dict:
         """
@@ -136,6 +205,11 @@ class APIClient:
         )
         _raise_for_status(response)
         return response.json() or {}
+
+    async def delete_participant(self, participant_id: int) -> None:
+        """DELETE /participants/{participant_id} — deletes a participant."""
+        response = await self._client.delete(f"/participants/{participant_id}")
+        _raise_for_status(response)
 
     async def update_participant(self, participant_id: int, payload: dict) -> dict:
         """PATCH /participants/{participant_id} — updates participant fields and returns ParticipantResponse dict."""

@@ -23,10 +23,11 @@ logger = logging.getLogger(__name__)
 # Valid answer characters (A-E, case-insensitive matching)
 VALID_ANSWERS = set("ABCDE")
 
-# Patterns to match lines like: "1. A", "1) A", "1 - A", "Q1: A", "1 A"
+# Patterns to match lines like:
+#   "1. A", "1) A", "1 - A", "Q1: A", "1 A", "1 : C"
+#   Allows optional whitespace around any single separator character.
 _ANSWER_PATTERN = re.compile(
-    r"[Qq]?(\d+)\s*[.)\-:]\s*([A-Ea-e])\b"
-    r"|[Qq]?(\d+)\s+([A-Ea-e])\b"
+    r"[Qq]?\s*(\d+)\s*[.)\-:]?\s*[:]?\s*([A-Ea-e])\b"
 )
 
 
@@ -39,9 +40,18 @@ class OCRService:
 
     async def preprocess_image(self, image: np.ndarray) -> np.ndarray:
         """
-        Run the full preprocessing pipeline on a raw image.
+        Run the preprocessing pipeline on a raw image.
 
-        Pipeline:
+        For images that are already clean (high contrast, low noise — e.g.
+        digital screenshots or scanned documents with white background), the
+        heavy pipeline (CLAHE + denoising + Otsu) actually *hurts* OCR quality
+        by introducing artifacts.  We detect this case and return a simple
+        grayscale conversion instead.
+
+        Pipeline (clean image):
+          1. Grayscale conversion only
+
+        Pipeline (noisy/low-contrast image):
           1. Grayscale conversion
           2. Orientation detection and correction
           3. Adaptive histogram equalization (CLAHE)
@@ -52,14 +62,34 @@ class OCRService:
             image: Input image as a NumPy array (BGR or grayscale).
 
         Returns:
-            Preprocessed binary image as a NumPy array.
+            Preprocessed image as a NumPy array.
         """
         gray = self._to_grayscale(image)
+
+        if self._is_clean_image(gray):
+            # Already clean — just return grayscale, no further processing
+            return gray
+
         corrected = self._correct_orientation(gray)
         equalized = self._apply_clahe(corrected)
         denoised = self._denoise(equalized)
         binary = self._binarize(denoised)
         return binary
+
+    def _is_clean_image(self, gray: np.ndarray) -> bool:
+        """
+        Return True if the image is already high-contrast and clean.
+
+        Heuristic: if more than 85% of pixels are near-white (>200) or
+        near-black (<50), the image needs no further processing.
+        """
+        total = gray.size
+        if total == 0:
+            return False
+        near_white = int(np.sum(gray > 200))
+        near_black = int(np.sum(gray < 50))
+        ratio = (near_white + near_black) / total
+        return ratio > 0.85
 
     async def process_answer_key(
         self,
@@ -97,11 +127,17 @@ class OCRService:
             # Preprocess
             preprocessed = await self.preprocess_image(image)
 
-            # --- Extract text with per-word confidence via image_to_data ---
+            # PSM 11: sparse text — finds words anywhere on the page without
+            # assuming a single block. Works better for multi-column tables.
+            # PSM 6 (uniform block) was causing column-by-column reading.
+            _TESS_CONFIG = r"--oem 3 --psm 6"
             data = pytesseract.image_to_data(
-                preprocessed, output_type=Output.DICT
+                preprocessed, output_type=Output.DICT, config=_TESS_CONFIG
             )
-            full_text = pytesseract.image_to_string(preprocessed)
+            full_text = pytesseract.image_to_string(preprocessed, config=_TESS_CONFIG)
+            print("\n\n=== TEXTO BRUTO DO TESSERACT ===")
+            print(full_text)
+            print("================================\n\n")
 
             # Build a word→confidence map (last occurrence wins for duplicates)
             word_conf: dict[str, float] = {}
@@ -110,10 +146,14 @@ class OCRService:
                 if word and conf != -1:
                     word_conf[word.upper()] = float(conf)
 
-            # Parse answer patterns from full OCR text
-            extracted = self._parse_answer_key_text(
-                full_text, exam_questions_numbers, word_conf
+            # Try spatial pairing first; fall back to line-based parsing
+            extracted = self._parse_answer_key_spatial(
+                data, exam_questions_numbers, word_conf
             )
+            if not extracted:
+                extracted = self._parse_answer_key_text(
+                    full_text, exam_questions_numbers, word_conf
+                )
 
             if not extracted:
                 return AnswerKeyResult(
@@ -154,6 +194,264 @@ class OCRService:
     # Private helpers for answer key processing                           #
     # ------------------------------------------------------------------ #
 
+    def _parse_answer_key_spatial(
+        self,
+        data: dict,
+        max_question: int,
+        word_conf: dict,
+    ) -> List[ExtractedAnswer]:
+        """
+        Pair question numbers with answer letters using bounding-box proximity.
+
+        Handles both clean single-word tokens ("23", "B") and merged tokens
+        produced when Tesseract fuses colon-separated text ("23:B", "23:48:24:").
+        """
+        # ---- Step 1: expand raw tokens into atomic (text, cx, cy, conf) ----
+        # Tesseract sometimes merges "23:B" or "23:48:24:" into one token.
+        # We split on ":" and distribute the bounding box evenly.
+        _NUM_RE = re.compile(r"^[Qq]?(\d+)$")
+        _ANS_RE = re.compile(r"^([A-Ea-e])$")
+        # Also catch "23:B" merged tokens directly
+        _MERGED_RE = re.compile(r"[Qq]?(\d+)\s*[:.]\s*([A-Ea-e])\b")
+
+        atomic: list[tuple[str, float, float, float]] = []  # (text, cx, cy, conf)
+        merged_pairs: list[tuple[int, str, float]] = []     # (q_num, answer, conf)
+
+        n = len(data["text"])
+        for i in range(n):
+            raw = (data["text"][i] or "").strip()
+            if not raw:
+                continue
+            conf = float(data["conf"][i]) if data["conf"][i] != -1 else 50.0
+            x = data["left"][i]
+            y = data["top"][i]
+            w = data["width"][i]
+            h = data["height"][i]
+            cx = float(x + w / 2)
+            cy = float(y + h / 2)
+
+            # Check for merged "23:B" pattern first
+            m = _MERGED_RE.search(raw)
+            if m:
+                q_num = int(m.group(1))
+                answer = m.group(2).upper()
+                if 1 <= q_num <= max_question and answer in VALID_ANSWERS:
+                    merged_pairs.append((q_num, answer, conf))
+                continue
+
+            # Split on ":" to handle "23:48:24:" column merges
+            parts = [p.strip() for p in raw.split(":") if p.strip()]
+            if len(parts) > 1:
+                # Distribute bounding box width evenly across parts
+                part_w = w / len(parts)
+                for j, part in enumerate(parts):
+                    part_cx = x + part_w * j + part_w / 2
+                    atomic.append((part, part_cx, cy, conf))
+            else:
+                atomic.append((raw, cx, cy, conf))
+
+        # If we got clean merged pairs, return them directly
+        if merged_pairs:
+            seen: set[int] = set()
+            results: List[ExtractedAnswer] = []
+            for q_num, answer, conf in sorted(merged_pairs, key=lambda t: t[0]):
+                if q_num in seen:
+                    continue
+                seen.add(q_num)
+                results.append(ExtractedAnswer(
+                    question_number=q_num,
+                    answer=answer,
+                    confidence=conf,
+                ))
+            if len(results) >= max_question // 2:
+                return results
+            # Not enough — fall through to spatial matching
+
+        # ---- Step 2: separate number and answer tokens ----
+        heights_approx = 20.0  # fallback
+        num_tokens: list[tuple[int, float, float, float]] = []
+        ans_tokens: list[tuple[str, float, float, float]] = []
+
+        for word, cx, cy, conf in atomic:
+            m = _NUM_RE.match(word)
+            if m:
+                num_tokens.append((int(m.group(1)), cx, cy, conf))
+            elif _ANS_RE.match(word):
+                ans_tokens.append((word.upper(), cx, cy, conf))
+
+        if not num_tokens or not ans_tokens:
+            return []
+
+        # Estimate row height from vertical gaps between consecutive number tokens
+        sorted_nums = sorted(num_tokens, key=lambda t: t[2])
+        gaps = [
+            abs(sorted_nums[i+1][2] - sorted_nums[i][2])
+            for i in range(len(sorted_nums) - 1)
+            if abs(sorted_nums[i+1][2] - sorted_nums[i][2]) > 2
+        ]
+        row_h = float(sorted(gaps)[len(gaps) // 2]) if gaps else heights_approx
+        band = row_h * 0.8
+
+        # ---- Step 3: pair each number with the nearest answer in its band ----
+        seen2: set[int] = set()
+        results2: List[ExtractedAnswer] = []
+
+        for q_num, nx, ny, _ in sorted(num_tokens, key=lambda t: (t[2], t[1])):
+            if q_num < 1 or q_num > max_question:
+                continue
+            if q_num in seen2:
+                continue
+
+            candidates = [
+                (a, ax, ay, ac)
+                for a, ax, ay, ac in ans_tokens
+                if abs(ay - ny) <= band and ax > nx
+            ]
+            if not candidates:
+                candidates = [
+                    (a, ax, ay, ac)
+                    for a, ax, ay, ac in ans_tokens
+                    if abs(ay - ny) <= band
+                ]
+            if not candidates:
+                continue
+
+            best = min(candidates, key=lambda t: abs(t[1] - nx))
+            answer = best[0]
+            confidence = best[3] if best[3] > 0 else word_conf.get(answer, 50.0)
+
+            if answer not in VALID_ANSWERS:
+                continue
+
+            seen2.add(q_num)
+            results2.append(ExtractedAnswer(
+                question_number=q_num,
+                answer=answer,
+                confidence=confidence,
+            ))
+
+        return results2
+
+    def _parse_answer_sheet_spatial(
+        self,
+        data: dict,
+        question_map: dict,
+        word_conf: dict,
+    ) -> List[ExtractedAnswer]:
+        """Spatial pairing for answer sheets — same algorithm, validates against question_map."""
+        _NUM_RE = re.compile(r"^[Qq]?(\d+)$")
+        _ANS_RE = re.compile(r"^([A-Ea-e])$")
+        _MERGED_RE = re.compile(r"[Qq]?(\d+)\s*[:.]\s*([A-Ea-e])\b")
+
+        atomic: list[tuple[str, float, float, float]] = []
+        merged_pairs: list[tuple[int, str, float]] = []
+
+        n = len(data["text"])
+        for i in range(n):
+            raw = (data["text"][i] or "").strip()
+            if not raw:
+                continue
+            conf = float(data["conf"][i]) if data["conf"][i] != -1 else 50.0
+            x = data["left"][i]
+            y = data["top"][i]
+            w = data["width"][i]
+            h = data["height"][i]
+            cx = float(x + w / 2)
+            cy = float(y + h / 2)
+
+            m = _MERGED_RE.search(raw)
+            if m:
+                q_num = int(m.group(1))
+                answer = m.group(2).upper()
+                if q_num in question_map and answer in VALID_ANSWERS:
+                    merged_pairs.append((q_num, answer, conf))
+                continue
+
+            parts = [p.strip() for p in raw.split(":") if p.strip()]
+            if len(parts) > 1:
+                part_w = w / len(parts)
+                for j, part in enumerate(parts):
+                    part_cx = x + part_w * j + part_w / 2
+                    atomic.append((part, part_cx, cy, conf))
+            else:
+                atomic.append((raw, cx, cy, conf))
+
+        if merged_pairs:
+            seen: set[int] = set()
+            results: List[ExtractedAnswer] = []
+            for q_num, answer, conf in sorted(merged_pairs, key=lambda t: t[0]):
+                if q_num in seen:
+                    continue
+                seen.add(q_num)
+                results.append(ExtractedAnswer(
+                    question_number=q_num,
+                    answer=answer,
+                    confidence=conf,
+                ))
+            if len(results) >= len(question_map) // 2:
+                return results
+
+        num_tokens: list[tuple[int, float, float, float]] = []
+        ans_tokens: list[tuple[str, float, float, float]] = []
+
+        for word, cx, cy, conf in atomic:
+            m = _NUM_RE.match(word)
+            if m:
+                num_tokens.append((int(m.group(1)), cx, cy, conf))
+            elif _ANS_RE.match(word):
+                ans_tokens.append((word.upper(), cx, cy, conf))
+
+        if not num_tokens or not ans_tokens:
+            return []
+
+        sorted_nums = sorted(num_tokens, key=lambda t: t[2])
+        gaps = [
+            abs(sorted_nums[i+1][2] - sorted_nums[i][2])
+            for i in range(len(sorted_nums) - 1)
+            if abs(sorted_nums[i+1][2] - sorted_nums[i][2]) > 2
+        ]
+        row_h = float(sorted(gaps)[len(gaps) // 2]) if gaps else 20.0
+        band = row_h * 0.8
+
+        seen2: set[int] = set()
+        results2: List[ExtractedAnswer] = []
+
+        for q_num, nx, ny, _ in sorted(num_tokens, key=lambda t: (t[2], t[1])):
+            if q_num not in question_map:
+                continue
+            if q_num in seen2:
+                continue
+
+            candidates = [
+                (a, ax, ay, ac)
+                for a, ax, ay, ac in ans_tokens
+                if abs(ay - ny) <= band and ax > nx
+            ]
+            if not candidates:
+                candidates = [
+                    (a, ax, ay, ac)
+                    for a, ax, ay, ac in ans_tokens
+                    if abs(ay - ny) <= band
+                ]
+            if not candidates:
+                continue
+
+            best = min(candidates, key=lambda t: abs(t[1] - nx))
+            answer = best[0]
+            confidence = best[3] if best[3] > 0 else word_conf.get(answer, 50.0)
+
+            if answer not in VALID_ANSWERS:
+                continue
+
+            seen2.add(q_num)
+            results2.append(ExtractedAnswer(
+                question_number=q_num,
+                answer=answer,
+                confidence=confidence,
+            ))
+
+        return results2
+
     def _parse_answer_key_text(
         self,
         text: str,
@@ -163,23 +461,16 @@ class OCRService:
         """
         Parse OCR text and return validated ExtractedAnswer objects.
 
-        Supports patterns: "1. A", "1) A", "1 - A", "Q1: A", "1 A"
+        Handles both clean lines ("1: C") and Tesseract column-merge artifacts
+        where an entire column appears on one line ("23:48:24:C25:B...").
         """
         results: List[ExtractedAnswer] = []
         seen: set[int] = set()
 
-        for line in text.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-
-            match = _ANSWER_PATTERN.search(line)
-            if not match:
-                continue
-
-            # Groups 1,2 cover separator patterns; groups 3,4 cover space-only
-            q_str = match.group(1) or match.group(3)
-            a_str = match.group(2) or match.group(4)
+        # Scan the entire text (not just per-line) for all number:letter pairs
+        for match in _ANSWER_PATTERN.finditer(text):
+            q_str = match.group(1)
+            a_str = match.group(2)
 
             if not q_str or not a_str:
                 continue
@@ -187,31 +478,60 @@ class OCRService:
             q_num = int(q_str)
             answer = a_str.upper()
 
-            # Validate question number range
             if q_num < 1 or q_num > max_question:
-                logger.debug("Skipping out-of-range question %d", q_num)
                 continue
-
-            # Validate answer character
             if answer not in VALID_ANSWERS:
-                logger.debug("Skipping invalid answer '%s' for Q%d", answer, q_num)
                 continue
-
-            # Skip duplicates (keep first occurrence)
             if q_num in seen:
                 continue
+
             seen.add(q_num)
-
-            # Confidence: look up the answer letter in word_conf, default 50
             confidence = word_conf.get(answer, 50.0)
+            results.append(ExtractedAnswer(
+                question_number=q_num,
+                answer=answer,
+                confidence=confidence,
+            ))
 
-            results.append(
-                ExtractedAnswer(
-                    question_number=q_num,
-                    answer=answer,
-                    confidence=confidence,
-                )
-            )
+        return results
+
+    def _parse_answer_sheet_text(
+        self,
+        text: str,
+        question_map: dict,
+        word_conf: dict,
+    ) -> List[ExtractedAnswer]:
+        """
+        Parse OCR text for answer sheets — validates against question_map.
+        Scans full text to handle column-merge artifacts.
+        """
+        results: List[ExtractedAnswer] = []
+        seen: set[int] = set()
+
+        for match in _ANSWER_PATTERN.finditer(text):
+            q_str = match.group(1)
+            a_str = match.group(2)
+
+            if not q_str or not a_str:
+                continue
+
+            q_num = int(q_str)
+            answer = a_str.upper()
+
+            if q_num not in question_map:
+                continue
+            if answer not in VALID_ANSWERS:
+                continue
+            if q_num in seen:
+                continue
+
+            seen.add(q_num)
+            confidence = word_conf.get(answer, 50.0)
+            results.append(ExtractedAnswer(
+                question_number=q_num,
+                answer=answer,
+                confidence=confidence,
+            ))
 
         return results
 
@@ -284,9 +604,11 @@ class OCRService:
             # Preprocess
             preprocessed = await self.preprocess_image(image)
 
-            # Extract text with per-word confidence via image_to_data
-            data = pytesseract.image_to_data(preprocessed, output_type=Output.DICT)
-            full_text = pytesseract.image_to_string(preprocessed)
+            # PSM 11: sparse text — finds words anywhere on the page without
+            # assuming a single block. Works better for multi-column tables.
+            _TESS_CONFIG = r"--oem 3 --psm 11"
+            data = pytesseract.image_to_data(preprocessed, output_type=Output.DICT, config=_TESS_CONFIG)
+            full_text = pytesseract.image_to_string(preprocessed, config=_TESS_CONFIG)
 
             # Build a word→confidence map (last occurrence wins for duplicates)
             word_conf: dict[str, float] = {}
@@ -310,8 +632,10 @@ class OCRService:
                     error_message=f"No questions found for exam_id={exam_id}.",
                 )
 
-            # Parse answer patterns from full OCR text
-            extracted = self._parse_answer_sheet_text(full_text, question_map, word_conf)
+            # Try spatial pairing first; fall back to line-based parsing
+            extracted = self._parse_answer_sheet_spatial(data, question_map, word_conf)
+            if not extracted:
+                extracted = self._parse_answer_sheet_text(full_text, question_map, word_conf)
 
             if not extracted:
                 return AnswerSheetResult(
@@ -360,66 +684,6 @@ class OCRService:
     # ------------------------------------------------------------------ #
     # Private helpers for answer sheet processing                         #
     # ------------------------------------------------------------------ #
-
-    def _parse_answer_sheet_text(
-        self,
-        text: str,
-        question_map: dict,
-        word_conf: dict,
-    ) -> List[ExtractedAnswer]:
-        """
-        Parse OCR text and return validated ExtractedAnswer objects for an answer sheet.
-
-        Only accepts question numbers that correspond to existing questions in the exam.
-        Supports patterns: "1. A", "1) A", "1 - A", "Q1: A", "1 A"
-        """
-        results: List[ExtractedAnswer] = []
-        seen: set[int] = set()
-
-        for line in text.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-
-            match = _ANSWER_PATTERN.search(line)
-            if not match:
-                continue
-
-            q_str = match.group(1) or match.group(3)
-            a_str = match.group(2) or match.group(4)
-
-            if not q_str or not a_str:
-                continue
-
-            q_num = int(q_str)
-            answer = a_str.upper()
-
-            # Validate question number exists in the exam
-            if q_num not in question_map:
-                logger.debug("Skipping question %d not found in exam", q_num)
-                continue
-
-            # Validate answer character
-            if answer not in VALID_ANSWERS:
-                logger.debug("Skipping invalid answer '%s' for Q%d", answer, q_num)
-                continue
-
-            # Skip duplicates (keep first occurrence)
-            if q_num in seen:
-                continue
-            seen.add(q_num)
-
-            confidence = word_conf.get(answer, 50.0)
-
-            results.append(
-                ExtractedAnswer(
-                    question_number=q_num,
-                    answer=answer,
-                    confidence=confidence,
-                )
-            )
-
-        return results
 
     async def _save_answer_sheet(
         self,

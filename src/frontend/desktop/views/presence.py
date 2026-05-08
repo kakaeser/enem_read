@@ -14,6 +14,7 @@ Requirements: 6.1, 6.2, 6.3, 6.4, 6.5
 
 from __future__ import annotations
 
+import asyncio
 from typing import Callable, Optional
 
 import flet as ft
@@ -59,6 +60,9 @@ class PresenceView:
         # Controls (populated in build())
         self._list_column: Optional[ft.Column] = None
         self._import_button: Optional[ft.ElevatedButton] = None
+        self._add_button: Optional[ft.ElevatedButton] = None
+        self._add_name_field: Optional[ft.TextField] = None
+        self._add_row: Optional[ft.Row] = None
         self._file_picker: Optional[ft.FilePicker] = None
         self._page: Optional[ft.Page] = None
 
@@ -116,6 +120,27 @@ class PresenceView:
             visible=not self.read_only,  # Requirement 6.4
         )
 
+        # ---- Add participant manually (hidden in read_only mode) ------
+        self._add_name_field = ft.TextField(
+            hint_text=t("name"),
+            expand=True,
+            dense=True,
+            visible=not self.read_only,
+        )
+        self._add_button = ft.ElevatedButton(
+            text=t("add_participant"),
+            icon=ft.Icons.PERSON_ADD,
+            on_click=self._on_add_participant_clicked,
+            bgcolor=self.theme.primary,
+            color=self.theme.on_primary,
+            visible=not self.read_only,
+        )
+        self._add_row = ft.Row(
+            controls=[self._add_name_field, self._add_button],
+            spacing=8,
+            visible=not self.read_only,
+        )
+
         # ---- Refresh button -------------------------------------------
         refresh_button = ft.IconButton(
             icon=ft.Icons.REFRESH,
@@ -157,6 +182,7 @@ class PresenceView:
             content=ft.Column(
                 controls=[
                     header_row,
+                    self._add_row,
                     ft.Divider(color=self.theme.surface, height=1),
                     self._list_column,
                 ],
@@ -237,6 +263,13 @@ class PresenceView:
                         opacity=0.7,
                     ),
                     switch,
+                    ft.IconButton(
+                        icon=ft.Icons.DELETE_OUTLINE,
+                        icon_color="#EF5350",
+                        tooltip=t("delete_participant"),
+                        visible=not self.read_only,
+                        on_click=self._make_delete_handler(participant_id, name),
+                    ),
                 ],
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
@@ -395,6 +428,121 @@ class PresenceView:
         self._page.update()
 
         await detail_view.load()
+
+    # ------------------------------------------------------------------
+    # Private helpers — delete participant
+    # ------------------------------------------------------------------
+
+    def _make_delete_handler(self, participant_id: int, name: str) -> Callable:
+        """Return a click handler that confirms and deletes a participant."""
+
+        def handler(e: ft.ControlEvent) -> None:
+            if self._page is not None:
+                self._page.run_task(self._confirm_delete_participant, participant_id, name)
+
+        return handler
+
+    async def _confirm_delete_participant(self, participant_id: int, name: str) -> None:
+        """Show a confirmation dialog then delete the participant."""
+        if self._page is None:
+            return
+
+        confirmed: asyncio.Future[bool] = asyncio.get_event_loop().create_future()
+
+        def on_confirm(_: ft.ControlEvent) -> None:
+            dialog.open = False
+            self._page.update()
+            if not confirmed.done():
+                confirmed.set_result(True)
+
+        def on_cancel(_: ft.ControlEvent) -> None:
+            dialog.open = False
+            self._page.update()
+            if not confirmed.done():
+                confirmed.set_result(False)
+
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text(t("delete_participant")),
+            content=ft.Text(f'"{name}" — {t("delete_confirm")}'),
+            actions=[
+                ft.TextButton(text=t("cancel"), on_click=on_cancel),
+                ft.TextButton(
+                    text=t("delete"),
+                    style=ft.ButtonStyle(color="#EF5350"),
+                    on_click=on_confirm,
+                ),
+            ],
+        )
+        self._page.dialog = dialog
+        dialog.open = True
+        self._page.update()
+
+        if not await confirmed:
+            return
+
+        try:
+            await self.api.delete_participant(participant_id)
+            await self.load()
+        except APIError as err:
+            if self._page is not None:
+                self._page.snack_bar = ft.SnackBar(
+                    content=ft.Text(err.message), open=True
+                )
+                self._page.update()
+
+    # ------------------------------------------------------------------
+    # Private helpers — add participant manually
+    # ------------------------------------------------------------------
+
+    def _on_add_participant_clicked(self, e: ft.ControlEvent) -> None:
+        """Dispatch the async add participant call from a sync click handler."""
+        if self._page is not None:
+            self._page.run_task(self._add_participant_manually)
+
+    async def _add_participant_manually(self) -> None:
+        """Call api.add_participant with the name from the text field."""
+        if self._add_name_field is None:
+            return
+
+        name = (self._add_name_field.value or "").strip()
+        if not name:
+            if self._page is not None:
+                self._page.snack_bar = ft.SnackBar(
+                    content=ft.Text(t("error_required")), open=True
+                )
+                self._page.update()
+            return
+
+        if self._add_button is not None:
+            self._add_button.disabled = True
+            try:
+                self._add_button.update()
+            except Exception:
+                pass
+
+        try:
+            await self.api.add_participant(self.exam_id, name)
+            self._add_name_field.value = ""
+            try:
+                self._add_name_field.update()
+            except Exception:
+                pass
+            # Reload the list to show the new participant
+            await self.load()
+        except APIError as err:
+            if self._page is not None:
+                self._page.snack_bar = ft.SnackBar(
+                    content=ft.Text(err.message), open=True
+                )
+                self._page.update()
+        finally:
+            if self._add_button is not None:
+                self._add_button.disabled = False
+                try:
+                    self._add_button.update()
+                except Exception:
+                    pass
 
     # ------------------------------------------------------------------
     # Private helpers — import

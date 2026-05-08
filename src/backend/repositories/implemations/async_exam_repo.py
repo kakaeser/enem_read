@@ -43,11 +43,18 @@ class AsyncExamRepository(IExamRepository):
         return exam
 
     async def delete(self, exam_id: int) -> bool:
-        """Delete an exam by ID (cascade deletes related entities)"""
-        result = await self.session.execute(
-            delete(Exam).where(Exam.exam_id == exam_id)
-        )
-        return result.rowcount > 0
+        """Delete an exam by ID.
+
+        Uses ORM-style delete so SQLAlchemy's cascade='all, delete-orphan'
+        fires and removes all related Questao, Participante, and Resposta rows.
+        A bulk DELETE statement would bypass the ORM cascade entirely.
+        """
+        exam = await self.get_by_id(exam_id)
+        if exam is None:
+            return False
+        await self.session.delete(exam)
+        await self.session.flush()
+        return True
 
     async def filter_by_status(self, status: str) -> List[Exam]:
         """Filter exams by status"""
