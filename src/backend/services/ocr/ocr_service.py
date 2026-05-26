@@ -1,18 +1,22 @@
 """
 OCR Service for processing answer key and answer sheet images.
 
-Implements image preprocessing pipeline:
-  grayscale → orientation detection/correction → CLAHE → denoising → Otsu binarization
+Architecture:
+  - process_answer_key  → Tesseract OCR on clean computer-generated text images.
+                          Minimal preprocessing (grayscale + optional Otsu).
+                          Aggressive regex to extract number/letter pairs.
+
+  - process_answer_sheet → Pure OpenCV OMR pipeline for ENEM-style bubble sheets.
+                           No Tesseract. Contour detection + pixel density voting.
 """
 
 import logging
 import re
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import cv2
 import numpy as np
 import pytesseract
-from pytesseract import Output
 
 from backend.entities.questao import Questao
 from backend.entities.resposta import Resposta
@@ -20,76 +24,37 @@ from backend.schemas.ocr import AnswerKeyResult, AnswerSheetResult, ExtractedAns
 
 logger = logging.getLogger(__name__)
 
-# Valid answer characters (A-E, case-insensitive matching)
+# Valid answer characters (A-E)
 VALID_ANSWERS = set("ABCDE")
 
-# Patterns to match lines like:
-#   "1. A", "1) A", "1 - A", "Q1: A", "1 A", "1 : C"
-#   Allows optional whitespace around any single separator character.
-_ANSWER_PATTERN = re.compile(
-    r"[Qq]?\s*(\d+)\s*[.)\-:]?\s*[:]?\s*([A-Ea-e])\b"
-)
+# Aggressive pattern: number, separator(s), then a single letter A-E.
+#
+# Key design decisions:
+#   - \d{1,2}   — only 1 or 2 digit question numbers (1-99).  Prevents
+#                 Tesseract noise like "810" matching as question 810 when
+#                 the real question is 8.  Adjust to \d{1,3} for 100+ questions.
+#   - [^a-zA-Z0-9]+  — ONE OR MORE non-alphanumeric chars as separator.
+#                 This requires at least one separator (colon, space, dot, etc.)
+#                 between the number and the letter, preventing "2C" from
+#                 matching as question 2 = C when it is actually noise.
+#   - (?![a-zA-Z])  — letter must not be followed by another letter (avoids
+#                 matching mid-word like "ABCDE").
+_ANSWER_PATTERN = re.compile(r"\b(\d{1,2})[^a-zA-Z0-9]+([A-Ea-e])(?![a-zA-Z])")
+
+# OMR tuning constants
+_MIN_BUBBLE_AREA = 200       # px² — discard tiny noise contours
+_MAX_BUBBLE_AREA = 8000      # px² — discard large blobs (text blocks, borders)
+_ASPECT_RATIO_TOLERANCE = 0.4  # |w/h - 1| must be < this to be considered circular
+_ROW_CLUSTER_TOLERANCE = 0.5   # fraction of median bubble height for row grouping
+_ANSWERS_PER_ROW = 5           # A B C D E
 
 
 class OCRService:
     """Service for OCR processing of answer keys and answer sheets."""
 
-    # ------------------------------------------------------------------ #
-    # Public async API                                                     #
-    # ------------------------------------------------------------------ #
-
-    async def preprocess_image(self, image: np.ndarray) -> np.ndarray:
-        """
-        Run the preprocessing pipeline on a raw image.
-
-        For images that are already clean (high contrast, low noise — e.g.
-        digital screenshots or scanned documents with white background), the
-        heavy pipeline (CLAHE + denoising + Otsu) actually *hurts* OCR quality
-        by introducing artifacts.  We detect this case and return a simple
-        grayscale conversion instead.
-
-        Pipeline (clean image):
-          1. Grayscale conversion only
-
-        Pipeline (noisy/low-contrast image):
-          1. Grayscale conversion
-          2. Orientation detection and correction
-          3. Adaptive histogram equalization (CLAHE)
-          4. Denoising (fastNlMeansDenoising)
-          5. Binarization (Otsu's method)
-
-        Args:
-            image: Input image as a NumPy array (BGR or grayscale).
-
-        Returns:
-            Preprocessed image as a NumPy array.
-        """
-        gray = self._to_grayscale(image)
-
-        if self._is_clean_image(gray):
-            # Already clean — just return grayscale, no further processing
-            return gray
-
-        corrected = self._correct_orientation(gray)
-        equalized = self._apply_clahe(corrected)
-        denoised = self._denoise(equalized)
-        binary = self._binarize(denoised)
-        return binary
-
-    def _is_clean_image(self, gray: np.ndarray) -> bool:
-        """
-        Return True if the image is already high-contrast and clean.
-
-        Heuristic: if more than 85% of pixels are near-white (>200) or
-        near-black (<50), the image needs no further processing.
-        """
-        total = gray.size
-        if total == 0:
-            return False
-        near_white = int(np.sum(gray > 200))
-        near_black = int(np.sum(gray < 50))
-        ratio = (near_white + near_black) / total
-        return ratio > 0.85
+    # ================================================================== #
+    # Part 1 – process_answer_key (OCR on clean text images)             #
+    # ================================================================== #
 
     async def process_answer_key(
         self,
@@ -99,19 +64,26 @@ class OCRService:
         question_repo,
     ) -> AnswerKeyResult:
         """
-        Process an answer key image and persist extracted correct answers.
+        Process an answer key image (clean, computer-generated text) and
+        persist extracted correct answers.
+
+        Pipeline:
+          1. Decode bytes → numpy array
+          2. Grayscale conversion
+          3. Optional Otsu binarization (only when image is not already clean)
+          4. pytesseract.image_to_string with --oem 3 --psm 6
+          5. Aggressive regex extraction of all (number, letter) pairs
 
         Args:
             image_file: Raw image bytes (JPEG, PNG, etc.).
             exam_id: ID of the exam this answer key belongs to.
             exam_questions_numbers: Total number of questions in the exam.
-            question_repo: Repository with get_by_exam_id, update, create_bulk methods.
+            question_repo: Repository with get_by_exam_id, update, create_bulk.
 
         Returns:
             AnswerKeyResult with extraction summary.
         """
         try:
-            # Decode bytes → numpy array
             nparr = np.frombuffer(image_file, np.uint8)
             image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
             if image is None:
@@ -124,36 +96,22 @@ class OCRService:
                     error_message="Failed to decode image file.",
                 )
 
-            # Preprocess
-            preprocessed = await self.preprocess_image(image)
+            preprocessed = self._preprocess_answer_key(image)
 
-            # PSM 11: sparse text — finds words anywhere on the page without
-            # assuming a single block. Works better for multi-column tables.
-            # PSM 6 (uniform block) was causing column-by-column reading.
-            _TESS_CONFIG = r"--oem 3 --psm 6"
-            data = pytesseract.image_to_data(
-                preprocessed, output_type=Output.DICT, config=_TESS_CONFIG
-            )
-            full_text = pytesseract.image_to_string(preprocessed, config=_TESS_CONFIG)
-            print("\n\n=== TEXTO BRUTO DO TESSERACT ===")
+            # Split the image into vertical columns and run Tesseract on each
+            # independently with PSM 6 (single uniform block).  This is far
+            # more reliable than PSM 4 on the full image because Tesseract
+            # never has to guess where one column ends and another begins.
+            full_text = self._ocr_by_columns(preprocessed)
+
+            logger.debug("=== RAW TESSERACT TEXT (answer key) ===\n%s\n===", full_text)
+            print("\n\n=== TEXTO BRUTO DO TESSERACT (GABARITO) ===")
             print(full_text)
-            print("================================\n\n")
+            print("============================================\n\n")
 
-            # Build a word→confidence map (last occurrence wins for duplicates)
-            word_conf: dict[str, float] = {}
-            for word, conf in zip(data["text"], data["conf"]):
-                word = word.strip()
-                if word and conf != -1:
-                    word_conf[word.upper()] = float(conf)
-
-            # Try spatial pairing first; fall back to line-based parsing
-            extracted = self._parse_answer_key_spatial(
-                data, exam_questions_numbers, word_conf
+            extracted = self._parse_answer_key_text(
+                full_text, exam_questions_numbers
             )
-            if not extracted:
-                extracted = self._parse_answer_key_text(
-                    full_text, exam_questions_numbers, word_conf
-                )
 
             if not extracted:
                 return AnswerKeyResult(
@@ -165,16 +123,18 @@ class OCRService:
                     error_message="No valid question-answer pairs found in image.",
                 )
 
-            # Persist to database
             await self._save_answer_key(exam_id, extracted, question_repo)
 
-            avg_conf = sum(e.confidence for e in extracted) / len(extracted)
-            flagged = sum(1 for e in extracted if e.confidence < 80.0)
+            # Answer key OCR confidence is fixed at 95 — Tesseract on clean
+            # text is highly reliable; we don't call image_to_data to keep
+            # the pipeline fast.
+            avg_conf = 95.0
+            flagged = 0
 
             return AnswerKeyResult(
                 exam_id=exam_id,
                 extracted_answers=extracted,
-                avg_confidence=round(avg_conf, 2),
+                avg_confidence=avg_conf,
                 flagged_count=flagged,
                 success=True,
             )
@@ -191,292 +151,156 @@ class OCRService:
             )
 
     # ------------------------------------------------------------------ #
-    # Private helpers for answer key processing                           #
+    # Answer key preprocessing — minimal, non-destructive                 #
     # ------------------------------------------------------------------ #
 
-    def _parse_answer_key_spatial(
-        self,
-        data: dict,
-        max_question: int,
-        word_conf: dict,
-    ) -> List[ExtractedAnswer]:
+    def _preprocess_answer_key(self, image: np.ndarray) -> np.ndarray:
         """
-        Pair question numbers with answer letters using bounding-box proximity.
+        Minimal preprocessing for clean, computer-generated answer key images.
 
-        Handles both clean single-word tokens ("23", "B") and merged tokens
-        produced when Tesseract fuses colon-separated text ("23:B", "23:48:24:").
+        Steps:
+          1. Grayscale conversion (always)
+          2. Otsu binarization (only when the image is NOT already high-contrast)
+
+        CLAHE and NlMeansDenoising are intentionally omitted — they destroy
+        clean pixels and degrade Tesseract accuracy on digital documents.
         """
-        # ---- Step 1: expand raw tokens into atomic (text, cx, cy, conf) ----
-        # Tesseract sometimes merges "23:B" or "23:48:24:" into one token.
-        # We split on ":" and distribute the bounding box evenly.
-        _NUM_RE = re.compile(r"^[Qq]?(\d+)$")
-        _ANS_RE = re.compile(r"^([A-Ea-e])$")
-        # Also catch "23:B" merged tokens directly
-        _MERGED_RE = re.compile(r"[Qq]?(\d+)\s*[:.]\s*([A-Ea-e])\b")
+        gray = self._to_grayscale(image)
 
-        atomic: list[tuple[str, float, float, float]] = []  # (text, cx, cy, conf)
-        merged_pairs: list[tuple[int, str, float]] = []     # (q_num, answer, conf)
+        if self._is_clean_image(gray):
+            # Already high-contrast — return as-is to preserve pixel quality
+            return gray
 
-        n = len(data["text"])
-        for i in range(n):
-            raw = (data["text"][i] or "").strip()
-            if not raw:
-                continue
-            conf = float(data["conf"][i]) if data["conf"][i] != -1 else 50.0
-            x = data["left"][i]
-            y = data["top"][i]
-            w = data["width"][i]
-            h = data["height"][i]
-            cx = float(x + w / 2)
-            cy = float(y + h / 2)
+        # Low-contrast scan: a single Otsu pass is enough
+        _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        return binary
 
-            # Check for merged "23:B" pattern first
-            m = _MERGED_RE.search(raw)
-            if m:
-                q_num = int(m.group(1))
-                answer = m.group(2).upper()
-                if 1 <= q_num <= max_question and answer in VALID_ANSWERS:
-                    merged_pairs.append((q_num, answer, conf))
-                continue
+    # ------------------------------------------------------------------ #
+    # Answer key column-split OCR                                        #
+    # ------------------------------------------------------------------ #
 
-            # Split on ":" to handle "23:48:24:" column merges
-            parts = [p.strip() for p in raw.split(":") if p.strip()]
-            if len(parts) > 1:
-                # Distribute bounding box width evenly across parts
-                part_w = w / len(parts)
-                for j, part in enumerate(parts):
-                    part_cx = x + part_w * j + part_w / 2
-                    atomic.append((part, part_cx, cy, conf))
-            else:
-                atomic.append((raw, cx, cy, conf))
+    def _ocr_by_columns(self, image: np.ndarray) -> str:
+        """
+        Detect vertical text columns via projection profile, crop each one,
+        upscale 2x, run Tesseract PSM 6 on each independently, and
+        concatenate the results.
 
-        # If we got clean merged pairs, return them directly
-        if merged_pairs:
-            seen: set[int] = set()
-            results: List[ExtractedAnswer] = []
-            for q_num, answer, conf in sorted(merged_pairs, key=lambda t: t[0]):
-                if q_num in seen:
-                    continue
-                seen.add(q_num)
-                results.append(ExtractedAnswer(
-                    question_number=q_num,
-                    answer=answer,
-                    confidence=conf,
-                ))
-            if len(results) >= max_question // 2:
-                return results
-            # Not enough — fall through to spatial matching
+        Why this works better than running Tesseract on the full image:
+          - PSM 6 on a single column is extremely reliable (one uniform block).
+          - Tesseract never has to guess column boundaries, so rows are never
+            merged across columns.
+          - Each column is upscaled independently, maximising glyph resolution
+            for the B↔8 / A↔4 disambiguation.
 
-        # ---- Step 2: separate number and answer tokens ----
-        heights_approx = 20.0  # fallback
-        num_tokens: list[tuple[int, float, float, float]] = []
-        ans_tokens: list[tuple[str, float, float, float]] = []
+        Falls back to a single full-image pass if column detection fails.
+        """
+        columns = self._detect_columns(image)
 
-        for word, cx, cy, conf in atomic:
-            m = _NUM_RE.match(word)
-            if m:
-                num_tokens.append((int(m.group(1)), cx, cy, conf))
-            elif _ANS_RE.match(word):
-                ans_tokens.append((word.upper(), cx, cy, conf))
+        if not columns:
+            # Fallback: treat the whole image as one column
+            columns = [(0, image.shape[1])]
 
-        if not num_tokens or not ans_tokens:
-            return []
+        config = r"--oem 3 --psm 6"
+        parts: list[str] = []
 
-        # Estimate row height from vertical gaps between consecutive number tokens
-        sorted_nums = sorted(num_tokens, key=lambda t: t[2])
-        gaps = [
-            abs(sorted_nums[i+1][2] - sorted_nums[i][2])
-            for i in range(len(sorted_nums) - 1)
-            if abs(sorted_nums[i+1][2] - sorted_nums[i][2]) > 2
-        ]
-        row_h = float(sorted(gaps)[len(gaps) // 2]) if gaps else heights_approx
-        band = row_h * 0.8
+        for x_start, x_end in columns:
+            strip = image[:, x_start:x_end]
 
-        # ---- Step 3: pair each number with the nearest answer in its band ----
-        seen2: set[int] = set()
-        results2: List[ExtractedAnswer] = []
+            # 2x upscale — most effective fix for small-glyph confusion
+            upscaled = cv2.resize(
+                strip,
+                None,
+                fx=2.0,
+                fy=2.0,
+                interpolation=cv2.INTER_CUBIC,
+            )
 
-        for q_num, nx, ny, _ in sorted(num_tokens, key=lambda t: (t[2], t[1])):
-            if q_num < 1 or q_num > max_question:
-                continue
-            if q_num in seen2:
-                continue
+            text = pytesseract.image_to_string(upscaled, config=config)
+            parts.append(text.strip())
 
-            candidates = [
-                (a, ax, ay, ac)
-                for a, ax, ay, ac in ans_tokens
-                if abs(ay - ny) <= band and ax > nx
-            ]
-            if not candidates:
-                candidates = [
-                    (a, ax, ay, ac)
-                    for a, ax, ay, ac in ans_tokens
-                    if abs(ay - ny) <= band
-                ]
-            if not candidates:
-                continue
+        return "\n".join(parts)
 
-            best = min(candidates, key=lambda t: abs(t[1] - nx))
-            answer = best[0]
-            confidence = best[3] if best[3] > 0 else word_conf.get(answer, 50.0)
+    def _detect_columns(self, image: np.ndarray) -> list[tuple[int, int]]:
+        """
+        Find vertical column boundaries using a horizontal projection profile.
 
-            if answer not in VALID_ANSWERS:
-                continue
+        Algorithm:
+          1. Binarise (invert so text pixels = 1).
+          2. Sum pixel values along each column (vertical projection).
+          3. Find contiguous runs of near-zero columns — these are the gaps
+             between text columns.
+          4. Return (x_start, x_end) pairs for each text region.
 
-            seen2.add(q_num)
-            results2.append(ExtractedAnswer(
-                question_number=q_num,
-                answer=answer,
-                confidence=confidence,
-            ))
+        Returns an empty list if fewer than 2 columns are found (caller falls
+        back to full-image OCR).
+        """
+        # Work on a binary image: text pixels are white (255)
+        if len(image.shape) == 3:
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = image
 
-        return results2
+        # Invert so text = high values
+        _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
-    def _parse_answer_sheet_spatial(
-        self,
-        data: dict,
-        question_map: dict,
-        word_conf: dict,
-    ) -> List[ExtractedAnswer]:
-        """Spatial pairing for answer sheets — same algorithm, validates against question_map."""
-        _NUM_RE = re.compile(r"^[Qq]?(\d+)$")
-        _ANS_RE = re.compile(r"^([A-Ea-e])$")
-        _MERGED_RE = re.compile(r"[Qq]?(\d+)\s*[:.]\s*([A-Ea-e])\b")
+        # Vertical projection: sum of ink pixels per column
+        col_sum = np.sum(binary, axis=0).astype(np.float32)
 
-        atomic: list[tuple[str, float, float, float]] = []
-        merged_pairs: list[tuple[int, str, float]] = []
+        # Smooth to avoid single-pixel gaps splitting a column
+        kernel = np.ones(10, dtype=np.float32) / 10
+        col_sum_smooth = np.convolve(col_sum, kernel, mode="same")
 
-        n = len(data["text"])
-        for i in range(n):
-            raw = (data["text"][i] or "").strip()
-            if not raw:
-                continue
-            conf = float(data["conf"][i]) if data["conf"][i] != -1 else 50.0
-            x = data["left"][i]
-            y = data["top"][i]
-            w = data["width"][i]
-            h = data["height"][i]
-            cx = float(x + w / 2)
-            cy = float(y + h / 2)
+        # A column is a "gap" if its smoothed ink density is below 1% of max
+        threshold = col_sum_smooth.max() * 0.01
+        is_gap = col_sum_smooth < threshold
 
-            m = _MERGED_RE.search(raw)
-            if m:
-                q_num = int(m.group(1))
-                answer = m.group(2).upper()
-                if q_num in question_map and answer in VALID_ANSWERS:
-                    merged_pairs.append((q_num, answer, conf))
-                continue
+        # Find transitions: gap→text (start) and text→gap (end)
+        width = image.shape[1]
+        columns: list[tuple[int, int]] = []
+        in_text = False
+        col_start = 0
 
-            parts = [p.strip() for p in raw.split(":") if p.strip()]
-            if len(parts) > 1:
-                part_w = w / len(parts)
-                for j, part in enumerate(parts):
-                    part_cx = x + part_w * j + part_w / 2
-                    atomic.append((part, part_cx, cy, conf))
-            else:
-                atomic.append((raw, cx, cy, conf))
+        for x in range(width):
+            if not in_text and not is_gap[x]:
+                in_text = True
+                col_start = x
+            elif in_text and is_gap[x]:
+                in_text = False
+                # Add a small horizontal padding so we don't clip edge glyphs
+                x_s = max(0, col_start - 4)
+                x_e = min(width, x + 4)
+                columns.append((x_s, x_e))
 
-        if merged_pairs:
-            seen: set[int] = set()
-            results: List[ExtractedAnswer] = []
-            for q_num, answer, conf in sorted(merged_pairs, key=lambda t: t[0]):
-                if q_num in seen:
-                    continue
-                seen.add(q_num)
-                results.append(ExtractedAnswer(
-                    question_number=q_num,
-                    answer=answer,
-                    confidence=conf,
-                ))
-            if len(results) >= len(question_map) // 2:
-                return results
+        if in_text:
+            columns.append((max(0, col_start - 4), width))
 
-        num_tokens: list[tuple[int, float, float, float]] = []
-        ans_tokens: list[tuple[str, float, float, float]] = []
+        # Merge very narrow regions (< 30px) — likely noise, not real columns
+        columns = [(s, e) for s, e in columns if (e - s) >= 30]
 
-        for word, cx, cy, conf in atomic:
-            m = _NUM_RE.match(word)
-            if m:
-                num_tokens.append((int(m.group(1)), cx, cy, conf))
-            elif _ANS_RE.match(word):
-                ans_tokens.append((word.upper(), cx, cy, conf))
+        return columns
 
-        if not num_tokens or not ans_tokens:
-            return []
-
-        sorted_nums = sorted(num_tokens, key=lambda t: t[2])
-        gaps = [
-            abs(sorted_nums[i+1][2] - sorted_nums[i][2])
-            for i in range(len(sorted_nums) - 1)
-            if abs(sorted_nums[i+1][2] - sorted_nums[i][2]) > 2
-        ]
-        row_h = float(sorted(gaps)[len(gaps) // 2]) if gaps else 20.0
-        band = row_h * 0.8
-
-        seen2: set[int] = set()
-        results2: List[ExtractedAnswer] = []
-
-        for q_num, nx, ny, _ in sorted(num_tokens, key=lambda t: (t[2], t[1])):
-            if q_num not in question_map:
-                continue
-            if q_num in seen2:
-                continue
-
-            candidates = [
-                (a, ax, ay, ac)
-                for a, ax, ay, ac in ans_tokens
-                if abs(ay - ny) <= band and ax > nx
-            ]
-            if not candidates:
-                candidates = [
-                    (a, ax, ay, ac)
-                    for a, ax, ay, ac in ans_tokens
-                    if abs(ay - ny) <= band
-                ]
-            if not candidates:
-                continue
-
-            best = min(candidates, key=lambda t: abs(t[1] - nx))
-            answer = best[0]
-            confidence = best[3] if best[3] > 0 else word_conf.get(answer, 50.0)
-
-            if answer not in VALID_ANSWERS:
-                continue
-
-            seen2.add(q_num)
-            results2.append(ExtractedAnswer(
-                question_number=q_num,
-                answer=answer,
-                confidence=confidence,
-            ))
-
-        return results2
+    # ------------------------------------------------------------------ #
+    # Answer key text parsing                                             #
+    # ------------------------------------------------------------------ #
 
     def _parse_answer_key_text(
         self,
         text: str,
         max_question: int,
-        word_conf: dict,
     ) -> List[ExtractedAnswer]:
         """
-        Parse OCR text and return validated ExtractedAnswer objects.
+        Use _ANSWER_PATTERN to extract all (question_number, answer) pairs
+        from the full OCR text in a single pass.
 
-        Handles both clean lines ("1: C") and Tesseract column-merge artifacts
-        where an entire column appears on one line ("23:48:24:C25:B...").
+        The aggressive regex tolerates arbitrary garbage between the number
+        and the letter (colons, spaces, dots, Tesseract noise characters).
         """
         results: List[ExtractedAnswer] = []
         seen: set[int] = set()
 
-        # Scan the entire text (not just per-line) for all number:letter pairs
         for match in _ANSWER_PATTERN.finditer(text):
-            q_str = match.group(1)
-            a_str = match.group(2)
-
-            if not q_str or not a_str:
-                continue
-
-            q_num = int(q_str)
-            answer = a_str.upper()
+            q_num = int(match.group(1))
+            answer = match.group(2).upper()
 
             if q_num < 1 or q_num > max_question:
                 continue
@@ -486,84 +310,18 @@ class OCRService:
                 continue
 
             seen.add(q_num)
-            confidence = word_conf.get(answer, 50.0)
+            # Confidence is fixed at 95 for clean-text OCR (see process_answer_key)
             results.append(ExtractedAnswer(
                 question_number=q_num,
                 answer=answer,
-                confidence=confidence,
+                confidence=95.0,
             ))
 
         return results
 
-    def _parse_answer_sheet_text(
-        self,
-        text: str,
-        question_map: dict,
-        word_conf: dict,
-    ) -> List[ExtractedAnswer]:
-        """
-        Parse OCR text for answer sheets — validates against question_map.
-        Scans full text to handle column-merge artifacts.
-        """
-        results: List[ExtractedAnswer] = []
-        seen: set[int] = set()
-
-        for match in _ANSWER_PATTERN.finditer(text):
-            q_str = match.group(1)
-            a_str = match.group(2)
-
-            if not q_str or not a_str:
-                continue
-
-            q_num = int(q_str)
-            answer = a_str.upper()
-
-            if q_num not in question_map:
-                continue
-            if answer not in VALID_ANSWERS:
-                continue
-            if q_num in seen:
-                continue
-
-            seen.add(q_num)
-            confidence = word_conf.get(answer, 50.0)
-            results.append(ExtractedAnswer(
-                question_number=q_num,
-                answer=answer,
-                confidence=confidence,
-            ))
-
-        return results
-
-    async def _save_answer_key(
-        self,
-        exam_id: int,
-        extracted: List[ExtractedAnswer],
-        question_repo,
-    ) -> None:
-        """Create or update Question records with extracted correct answers."""
-        existing: list[Questao] = await question_repo.get_by_exam_id(exam_id)
-        existing_map: dict[int, Questao] = {q.numero: q for q in existing}
-
-        to_create: list[Questao] = []
-
-        for item in extracted:
-            if item.question_number in existing_map:
-                q = existing_map[item.question_number]
-                q.question_correct_answer = item.answer
-                await question_repo.update(q)
-            else:
-                to_create.append(
-                    Questao(
-                        exam_id=exam_id,
-                        numero=item.question_number,
-                        peso=1,
-                        question_correct_answer=item.answer,
-                    )
-                )
-
-        if to_create:
-            await question_repo.create_bulk(to_create)
+    # ================================================================== #
+    # Part 2 – process_answer_sheet (OMR on bubble sheets)               #
+    # ================================================================== #
 
     async def process_answer_sheet(
         self,
@@ -574,7 +332,18 @@ class OCRService:
         response_repo,
     ) -> AnswerSheetResult:
         """
-        Process a participant answer sheet image and persist extracted marked answers.
+        Process a participant answer sheet (ENEM-style bubble form) using a
+        pure OpenCV OMR pipeline.  Tesseract is NOT used here.
+
+        Pipeline:
+          1. Decode bytes → numpy array
+          2. Grayscale → Gaussian Blur → Otsu threshold (inverted)
+          3. findContours to locate all blobs
+          4. Filter by area and aspect ratio to isolate circular bubbles
+          5. Sort bubbles top-to-bottom (rows) then left-to-right (columns)
+          6. For each row (question), pick the bubble with the highest
+             black-pixel density as the marked answer
+          7. Map row index to question_map
 
         Args:
             image_file: Raw image bytes (JPEG, PNG, etc.).
@@ -587,7 +356,6 @@ class OCRService:
             AnswerSheetResult with extraction summary.
         """
         try:
-            # Decode bytes → numpy array
             nparr = np.frombuffer(image_file, np.uint8)
             image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
             if image is None:
@@ -601,23 +369,7 @@ class OCRService:
                     error_message="Failed to decode image file.",
                 )
 
-            # Preprocess
-            preprocessed = await self.preprocess_image(image)
-
-            # PSM 11: sparse text — finds words anywhere on the page without
-            # assuming a single block. Works better for multi-column tables.
-            _TESS_CONFIG = r"--oem 3 --psm 11"
-            data = pytesseract.image_to_data(preprocessed, output_type=Output.DICT, config=_TESS_CONFIG)
-            full_text = pytesseract.image_to_string(preprocessed, config=_TESS_CONFIG)
-
-            # Build a word→confidence map (last occurrence wins for duplicates)
-            word_conf: dict[str, float] = {}
-            for word, conf in zip(data["text"], data["conf"]):
-                word = word.strip()
-                if word and conf != -1:
-                    word_conf[word.upper()] = float(conf)
-
-            # Fetch existing questions to validate against
+            # Fetch questions to validate against
             existing_questions: list[Questao] = await question_repo.get_by_exam_id(exam_id)
             question_map: dict[int, Questao] = {q.numero: q for q in existing_questions}
 
@@ -632,10 +384,7 @@ class OCRService:
                     error_message=f"No questions found for exam_id={exam_id}.",
                 )
 
-            # Try spatial pairing first; fall back to line-based parsing
-            extracted = self._parse_answer_sheet_spatial(data, question_map, word_conf)
-            if not extracted:
-                extracted = self._parse_answer_sheet_text(full_text, question_map, word_conf)
+            extracted = self._run_omr_pipeline(image, question_map)
 
             if not extracted:
                 return AnswerSheetResult(
@@ -645,10 +394,9 @@ class OCRService:
                     avg_confidence=0.0,
                     flagged_count=0,
                     success=False,
-                    error_message="No valid question-answer pairs found in image.",
+                    error_message="OMR pipeline could not detect any marked bubbles.",
                 )
 
-            # Persist to database
             await self._save_answer_sheet(
                 participant_id, exam_id, extracted, question_map, response_repo
             )
@@ -682,8 +430,230 @@ class OCRService:
             )
 
     # ------------------------------------------------------------------ #
-    # Private helpers for answer sheet processing                         #
+    # OMR pipeline                                                        #
     # ------------------------------------------------------------------ #
+
+    def _run_omr_pipeline(
+        self,
+        image: np.ndarray,
+        question_map: dict,
+    ) -> List[ExtractedAnswer]:
+        """
+        Full OMR pipeline for a bubble-sheet image.
+
+        Returns a list of ExtractedAnswer objects, one per detected question row.
+        """
+        # Step 1 – Grayscale
+        gray = self._to_grayscale(image)
+
+        # Step 2 – Gaussian Blur to reduce noise before thresholding
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+
+        # Step 3 – Otsu threshold (inverted so bubbles are white on black)
+        _, thresh = cv2.threshold(
+            blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
+        )
+
+        # Step 4 – Find all external contours
+        contours, _ = cv2.findContours(
+            thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+
+        # Step 5 – Filter to keep only bubble-shaped contours
+        bubbles = self._filter_bubble_contours(contours)
+
+        if not bubbles:
+            logger.warning("OMR: no bubble contours found after filtering.")
+            return []
+
+        # Step 6 – Sort into rows (top-to-bottom) and columns (left-to-right)
+        rows = self._cluster_bubbles_into_rows(bubbles)
+
+        # Step 7 – For each row, pick the darkest bubble and map to a question
+        return self._extract_answers_from_rows(rows, thresh, question_map)
+
+    def _filter_bubble_contours(
+        self,
+        contours: tuple,
+    ) -> List[Tuple[int, int, int, int]]:
+        """
+        Filter contours to keep only those that look like circular bubbles.
+
+        Criteria:
+          - Area between _MIN_BUBBLE_AREA and _MAX_BUBBLE_AREA
+          - Bounding-box aspect ratio (w/h) close to 1.0 (circular)
+
+        Returns a list of (x, y, w, h) bounding rectangles for valid bubbles.
+        """
+        valid: List[Tuple[int, int, int, int]] = []
+
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            if area < _MIN_BUBBLE_AREA or area > _MAX_BUBBLE_AREA:
+                continue
+
+            x, y, w, h = cv2.boundingRect(cnt)
+            if h == 0:
+                continue
+
+            aspect_ratio = w / float(h)
+            if abs(aspect_ratio - 1.0) > _ASPECT_RATIO_TOLERANCE:
+                continue
+
+            valid.append((x, y, w, h))
+
+        return valid
+
+    def _cluster_bubbles_into_rows(
+        self,
+        bubbles: List[Tuple[int, int, int, int]],
+    ) -> List[List[Tuple[int, int, int, int]]]:
+        """
+        Group bubble bounding boxes into rows by their vertical (y) position.
+
+        Bubbles whose top-y values are within (median_height * tolerance) of
+        each other are considered to be on the same row.
+
+        Returns a list of rows, each row sorted left-to-right by x.
+        The outer list is sorted top-to-bottom by the row's minimum y.
+        """
+        if not bubbles:
+            return []
+
+        # Estimate a typical bubble height
+        heights = [h for _, _, _, h in bubbles]
+        median_h = float(np.median(heights))
+        tolerance = median_h * _ROW_CLUSTER_TOLERANCE
+
+        # Sort all bubbles top-to-bottom first
+        sorted_bubbles = sorted(bubbles, key=lambda b: b[1])
+
+        rows: List[List[Tuple[int, int, int, int]]] = []
+        current_row: List[Tuple[int, int, int, int]] = [sorted_bubbles[0]]
+        current_row_y = sorted_bubbles[0][1]
+
+        for bubble in sorted_bubbles[1:]:
+            _, y, _, _ = bubble
+            if abs(y - current_row_y) <= tolerance:
+                current_row.append(bubble)
+            else:
+                # Sort current row left-to-right before saving
+                rows.append(sorted(current_row, key=lambda b: b[0]))
+                current_row = [bubble]
+                current_row_y = y
+
+        # Don't forget the last row
+        rows.append(sorted(current_row, key=lambda b: b[0]))
+
+        return rows
+
+    def _extract_answers_from_rows(
+        self,
+        rows: List[List[Tuple[int, int, int, int]]],
+        thresh: np.ndarray,
+        question_map: dict,
+    ) -> List[ExtractedAnswer]:
+        """
+        For each row that has exactly _ANSWERS_PER_ROW bubbles, determine
+        which bubble is filled by counting non-zero (white) pixels inside
+        each bubble mask on the inverted threshold image.
+
+        The bubble with the highest pixel count is the marked answer.
+        Maps row index to question numbers from question_map (sorted).
+
+        Confidence is computed as the ratio of the winning bubble's pixel
+        count to the total pixels in the bubble area, scaled to 0-100.
+        """
+        # Build an ordered list of question numbers from the map
+        sorted_question_numbers = sorted(question_map.keys())
+
+        results: List[ExtractedAnswer] = []
+        answer_letters = ["A", "B", "C", "D", "E"]
+
+        question_idx = 0
+
+        for row in rows:
+            # Only process rows that have exactly 5 bubbles (A-E columns)
+            if len(row) != _ANSWERS_PER_ROW:
+                logger.debug(
+                    "OMR: skipping row with %d bubbles (expected %d)",
+                    len(row),
+                    _ANSWERS_PER_ROW,
+                )
+                continue
+
+            if question_idx >= len(sorted_question_numbers):
+                break  # More rows than questions — stop
+
+            q_num = sorted_question_numbers[question_idx]
+            question_idx += 1
+
+            # Count filled pixels in each bubble
+            pixel_counts: List[int] = []
+            for x, y, w, h in row:
+                # Create a mask for this bubble's bounding box
+                mask = np.zeros(thresh.shape, dtype=np.uint8)
+                mask[y : y + h, x : x + w] = thresh[y : y + h, x : x + w]
+                count = cv2.countNonZero(mask)
+                pixel_counts.append(count)
+
+            best_idx = int(np.argmax(pixel_counts))
+            marked_answer = answer_letters[best_idx]
+
+            # Confidence: winning count / total bubble area, clamped to 100
+            x_b, y_b, w_b, h_b = row[best_idx]
+            bubble_area = w_b * h_b
+            raw_confidence = (pixel_counts[best_idx] / bubble_area) * 100.0 if bubble_area > 0 else 0.0
+            confidence = min(round(raw_confidence, 2), 100.0)
+
+            results.append(ExtractedAnswer(
+                question_number=q_num,
+                answer=marked_answer,
+                confidence=confidence,
+            ))
+
+        return results
+
+    # ================================================================== #
+    # Shared persistence helpers                                          #
+    # ================================================================== #
+
+    async def _save_answer_key(
+        self,
+        exam_id: int,
+        extracted: List[ExtractedAnswer],
+        question_repo,
+    ) -> None:
+        """
+        Update Question records with extracted correct answers.
+
+        IMPORTANT — only updates question_correct_answer.  peso and all other
+        fields are intentionally left untouched so that weights configured at
+        exam-creation time are never overwritten by OCR.
+
+        Questions that were pre-created by ExamManagerService.create_exam are
+        updated in-place.  If a question number from OCR has no matching row
+        (e.g. a phantom number produced by Tesseract noise) it is silently
+        skipped — we never create new rows here.
+        """
+        existing: list[Questao] = await question_repo.get_by_exam_id(exam_id)
+        existing_map: dict[int, Questao] = {q.numero: q for q in existing}
+
+        for item in extracted:
+            q = existing_map.get(item.question_number)
+            if q is None:
+                # OCR produced a question number that doesn't exist in this exam.
+                # Log and skip — do NOT create a new row with peso=1.
+                logger.warning(
+                    "_save_answer_key: question %d not found in exam %d — skipping",
+                    item.question_number,
+                    exam_id,
+                )
+                continue
+
+            # Only touch the answer field; preserve peso and everything else.
+            q.question_correct_answer = item.answer
+            await question_repo.update_answer_only(q.id, item.answer)
 
     async def _save_answer_sheet(
         self,
@@ -709,9 +679,9 @@ class OCRService:
             )
             await response_repo.create_or_update(response)
 
-    # ------------------------------------------------------------------ #
-    # Step 1 – Grayscale conversion                                        #
-    # ------------------------------------------------------------------ #
+    # ================================================================== #
+    # Shared image utilities                                              #
+    # ================================================================== #
 
     def _to_grayscale(self, image: np.ndarray) -> np.ndarray:
         """Convert image to grayscale if it is not already."""
@@ -719,7 +689,6 @@ class OCRService:
             raise ValueError("Image cannot be None")
 
         if len(image.shape) == 2:
-            # Already grayscale
             return image.copy()
 
         if len(image.shape) == 3:
@@ -731,156 +700,17 @@ class OCRService:
 
         raise ValueError(f"Unsupported image shape: {image.shape}")
 
-    # ------------------------------------------------------------------ #
-    # Step 2 – Orientation detection and correction                        #
-    # ------------------------------------------------------------------ #
-
-    def _correct_orientation(self, gray: np.ndarray) -> np.ndarray:
+    def _is_clean_image(self, gray: np.ndarray) -> bool:
         """
-        Detect image orientation and rotate to upright position.
+        Return True if the image is already high-contrast and clean.
 
-        Uses Tesseract OSD when available; falls back to a heuristic
-        based on text-line detection via Hough transform.
+        Heuristic: if more than 85% of pixels are near-white (>200) or
+        near-black (<50), no further preprocessing is needed.
         """
-        angle = self._detect_orientation_angle(gray)
-        if abs(angle) < 0.5:
-            return gray
-
-        return self._rotate_image(gray, angle)
-
-    def _detect_orientation_angle(self, gray: np.ndarray) -> float:
-        """
-        Return the skew angle (degrees) that should be applied to straighten the image.
-
-        Tries Tesseract OSD first; falls back to a Hough-line heuristic.
-        """
-        try:
-            return self._osd_angle(gray)
-        except Exception as exc:
-            logger.debug("Tesseract OSD unavailable (%s); using heuristic.", exc)
-            return self._heuristic_skew_angle(gray)
-
-    def _osd_angle(self, gray: np.ndarray) -> float:
-        """Use Tesseract OSD to detect orientation angle."""
-        import pytesseract  # imported lazily to avoid hard dependency at module load
-
-        osd = pytesseract.image_to_osd(gray, output_type=pytesseract.Output.DICT)
-        rotate = int(osd.get("rotate", 0))
-        # Tesseract reports the angle needed to make the text upright.
-        # We negate it because cv2.getRotationMatrix2D rotates counter-clockwise.
-        return -float(rotate)
-
-    def _heuristic_skew_angle(self, gray: np.ndarray) -> float:
-        """
-        Estimate skew angle using Hough line detection on edge-detected image.
-
-        Returns the median angle of detected near-horizontal lines, clamped to ±15°.
-        """
-        edges = cv2.Canny(gray, 50, 150, apertureSize=3)
-        lines = cv2.HoughLines(edges, 1, np.pi / 180, threshold=100)
-
-        if lines is None or len(lines) == 0:
-            return 0.0
-
-        angles = []
-        for line in lines:
-            rho, theta = line[0]
-            # Convert to degrees; near-horizontal lines have theta ≈ 0 or ≈ π
-            angle_deg = np.degrees(theta) - 90.0
-            if abs(angle_deg) <= 15.0:
-                angles.append(angle_deg)
-
-        if not angles:
-            return 0.0
-
-        return float(np.median(angles))
-
-    def _rotate_image(self, image: np.ndarray, angle: float) -> np.ndarray:
-        """Rotate image by *angle* degrees around its centre, filling with white."""
-        h, w = image.shape[:2]
-        centre = (w / 2.0, h / 2.0)
-        matrix = cv2.getRotationMatrix2D(centre, angle, 1.0)
-        rotated = cv2.warpAffine(
-            image,
-            matrix,
-            (w, h),
-            flags=cv2.INTER_LINEAR,
-            borderMode=cv2.BORDER_CONSTANT,
-            borderValue=255,
-        )
-        return rotated
-
-    # ------------------------------------------------------------------ #
-    # Step 3 – Adaptive histogram equalization (CLAHE)                    #
-    # ------------------------------------------------------------------ #
-
-    def _apply_clahe(
-        self,
-        gray: np.ndarray,
-        clip_limit: float = 2.0,
-        tile_grid_size: tuple = (8, 8),
-    ) -> np.ndarray:
-        """
-        Apply CLAHE (Contrast Limited Adaptive Histogram Equalization) to
-        correct uneven lighting conditions.
-
-        Args:
-            gray: Grayscale image.
-            clip_limit: Threshold for contrast limiting.
-            tile_grid_size: Size of grid for histogram equalization.
-
-        Returns:
-            Contrast-enhanced grayscale image.
-        """
-        clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=tile_grid_size)
-        return clahe.apply(gray)
-
-    # ------------------------------------------------------------------ #
-    # Step 4 – Denoising                                                   #
-    # ------------------------------------------------------------------ #
-
-    def _denoise(
-        self,
-        gray: np.ndarray,
-        h: int = 10,
-        template_window_size: int = 7,
-        search_window_size: int = 21,
-    ) -> np.ndarray:
-        """
-        Remove noise using Non-Local Means Denoising.
-
-        Args:
-            gray: Grayscale image.
-            h: Filter strength (higher = more denoising, less detail).
-            template_window_size: Size of template patch (must be odd).
-            search_window_size: Size of search window (must be odd).
-
-        Returns:
-            Denoised grayscale image.
-        """
-        return cv2.fastNlMeansDenoising(
-            gray,
-            None,
-            h=h,
-            templateWindowSize=template_window_size,
-            searchWindowSize=search_window_size,
-        )
-
-    # ------------------------------------------------------------------ #
-    # Step 5 – Binarization (Otsu's method)                               #
-    # ------------------------------------------------------------------ #
-
-    def _binarize(self, gray: np.ndarray) -> np.ndarray:
-        """
-        Convert grayscale image to binary using Otsu's thresholding.
-
-        Otsu's method automatically determines the optimal threshold value
-        by minimising intra-class intensity variance.
-
-        Returns:
-            Binary image (0 = black, 255 = white).
-        """
-        _, binary = cv2.threshold(
-            gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
-        )
-        return binary
+        total = gray.size
+        if total == 0:
+            return False
+        near_white = int(np.sum(gray > 200))
+        near_black = int(np.sum(gray < 50))
+        ratio = (near_white + near_black) / total
+        return ratio > 0.85

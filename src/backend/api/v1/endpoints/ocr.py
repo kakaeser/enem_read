@@ -199,13 +199,21 @@ async def set_answer_key_manual(
         answer = answer.strip().upper()
         if not answer:
             continue
-        peso = int(body.weights.get(q_str, body.weights.get(str(q_num), 1)))
+
+        # Only apply a peso if the caller explicitly sent one for this question.
+        # If no weight is provided, leave the existing peso untouched.
+        explicit_peso = body.weights.get(q_str) or body.weights.get(str(q_num))
+
         if q_num in existing_map:
             q = existing_map[q_num]
-            q.question_correct_answer = answer
-            q.peso = peso
-            await question_repo.update(q)
+            # Always update the answer
+            await question_repo.update_answer_only(q.id, answer)
+            # Only overwrite peso when the caller explicitly sent a weight
+            if explicit_peso is not None:
+                q.peso = int(explicit_peso)
+                await question_repo.update(q)
         else:
+            peso = int(explicit_peso) if explicit_peso is not None else 1
             to_create.append(Questao(
                 exam_id=exam_id,
                 numero=q_num,

@@ -430,8 +430,9 @@ class DashboardView:
         if self._page is None:
             return
 
-        lines = [f"{'Pos.':<5} {'Nome':<30} {'Nota':>8} {'Acertos %':>10}"]
-        lines.append("-" * 57)
+        #lines = [f"{'Pos.':<5} {'Nome':<30} {'Nota':>8} {'Acertos %':>10}"] tirei para melhor formatacao
+        lines = [f"{'Pos.':<5} {'Nome':<30} {'Nota':>8}"]
+        lines.append("-" * 41)
 
         sorted_results = sorted(
             self._results,
@@ -447,9 +448,12 @@ class DashboardView:
                 or entry.get("accuracy")
                 or 0
             )
+            nome_cortado = name[:28]
             score_str = f"{score:.2f}" if isinstance(score, float) else str(score)
             acc_str = f"{accuracy:.1f}%" if isinstance(accuracy, (int, float)) else str(accuracy)
-            lines.append(f"{rank:<5} {name:<30} {score_str:>8} {acc_str:>10}")
+
+            #lines.append(f"{rank:<5} {nome_cortado:<30} {score_str:>8} {acc_str:>10}") tirei para formatar melhor
+            lines.append(f"{rank:<5} {nome_cortado:<30} {score_str:>8}")
 
         text = "\n".join(lines)
         self._page.set_clipboard(text)

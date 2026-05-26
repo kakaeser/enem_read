@@ -1,4 +1,4 @@
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from backend.entities.questao import Questao
@@ -54,11 +54,26 @@ class AsyncQuestionRepository(IQuestionRepository):
         return result.scalar_one_or_none()
 
     async def update(self, question: Questao) -> Questao:
-        """Update an existing question"""
+        """Update an existing question (full object merge)."""
         await self.session.merge(question)
         await self.session.flush()
         await self.session.refresh(question)
         return question
+
+    async def update_answer_only(self, question_id: int, correct_answer: str) -> None:
+        """
+        Update ONLY the question_correct_answer column.
+
+        Uses a targeted SQL UPDATE so that peso and all other fields are
+        guaranteed to remain untouched, regardless of what the in-memory
+        object contains.
+        """
+        await self.session.execute(
+            update(Questao)
+            .where(Questao.id == question_id)
+            .values(question_correct_answer=correct_answer)
+        )
+        await self.session.flush()
 
     async def delete(self, question_id: int) -> bool:
         """Delete a question by ID"""

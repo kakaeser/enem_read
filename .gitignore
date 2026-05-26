@@ -11,7 +11,7 @@ venv/
 *.db.backup_*
 *.sqlite3
 
-
+ip.py
 testes.py
 .pytest_cache
 

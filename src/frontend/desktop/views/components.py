@@ -153,7 +153,7 @@ class ReadOnlyBanner:
 
     def build(self, page: Optional[ft.Page] = None) -> ft.Control:
         row_controls: list[ft.Control] = [
-            ft.Icon(ft.Icons.LOCK, color="#F57F17"),
+            ft.Icon(ft.Icons.LOCK, color="#ede1e1"),
             ft.Text(t("view_only")),
         ]
 
@@ -165,7 +165,7 @@ class ReadOnlyBanner:
             row_controls.append(ft.Text(ended_label))
 
         return ft.Container(
-            bgcolor="#FFF8E1",
+            bgcolor="#ed0202",
             padding=ft.padding.symmetric(horizontal=16, vertical=8),
             content=ft.Row(controls=row_controls),
         )

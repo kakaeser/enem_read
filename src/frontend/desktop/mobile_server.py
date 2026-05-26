@@ -7,6 +7,7 @@ import os
 import socket
 import socketserver
 import threading
+from frontend.desktop.ip import IP_VALUE
 
 logger = logging.getLogger(__name__)
 
@@ -148,10 +149,10 @@ class MobileServerLauncher:
                         return ip
         except OSError as exc:
             logger.warning(
-                "LAN IP detection failed (%s); falling back to 127.0.0.1", exc
+                "LAN IP detection failed (%s); falling back to IPV4 IP", exc
             )
-            # MUDAR AQUI O IPV4 QUANDO MUDAR DE REDE
-            return "192.168.0.85"
+            
+            return IP_VALUE
 
         # No non-loopback IPv4 found
         logger.warning(

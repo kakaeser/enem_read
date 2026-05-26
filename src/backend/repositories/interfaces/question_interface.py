@@ -37,6 +37,11 @@ class IQuestionRepository(ABC):
         pass
 
     @abstractmethod
+    async def update_answer_only(self, question_id: int, correct_answer: str) -> None:
+        """Update ONLY the question_correct_answer column, leaving peso untouched."""
+        pass
+
+    @abstractmethod
     async def delete(self, question_id: int) -> bool:
         """Delete a question by ID"""
         pass
