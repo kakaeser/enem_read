@@ -1,1 +1,3 @@
-from .presence_service import PresenceService
+from .exam_manager_service import ExamManagerService
+from .score_calculator_service import ScoreCalculatorService
+from .exam_history_service import ExamHistoryService

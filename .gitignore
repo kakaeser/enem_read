@@ -3,12 +3,17 @@ __pycache__/
 *.py[cod]
 *$py.class
 venv/
+.venv/
 .env
 *.db
+*.db-shm
+*.db-wal
+*.db.backup_*
 *.sqlite3
 
-
+ip.py
 testes.py
+.pytest_cache
 
 .idea/
 .vscode/
@@ -16,3 +21,4 @@ testes.py
 
 dist/
 build/
+command.txt
